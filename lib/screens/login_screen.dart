@@ -1,7 +1,9 @@
+// lib/screens/login_screen.dart
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:simple_messenger/constants/colors.dart';
+import '../constants/colors.dart';
 import '../services/auth_service.dart';
+import '../services/message_service.dart';
 import 'home_screen.dart';
 import 'register_screen.dart';
 import '../components/custom_text_field.dart';
@@ -97,20 +99,6 @@ class LoginScreenState extends State<LoginScreen> {
                         isLoading: _isLoading,
                       ),
                       const SizedBox(height: 24),
-                      // Forgot password
-                      GestureDetector(
-                        onTap: () {
-                          // Add forgot password functionality
-                        },
-                        child: const Text(
-                          'Recuperar contraseña',
-                          style: TextStyle(
-                            color: AppColors.primary,
-                            fontWeight: FontWeight.w500,
-                            fontSize: 13,
-                          ),
-                        ),
-                      ),
                     ],
                   ),
 
@@ -182,6 +170,16 @@ class LoginScreenState extends State<LoginScreen> {
         });
 
         if (success) {
+          // Connect to WebSocket
+          final messageService = Provider.of<MessageService>(
+            context,
+            listen: false,
+          );
+          messageService.connectToWebSocket();
+
+          // Load any pending messages
+          await messageService.getPendingMessages();
+
           Navigator.pushReplacement(
             context,
             MaterialPageRoute(builder: (context) => const HomeScreen()),

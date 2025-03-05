@@ -1,9 +1,11 @@
+// lib/screens/register_screen.dart
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:simple_messenger/components/custom_button.dart';
-import 'package:simple_messenger/components/custom_text_field.dart';
-import 'package:simple_messenger/constants/colors.dart';
+import '../components/custom_button.dart';
+import '../components/custom_text_field.dart';
+import '../constants/colors.dart';
 import '../services/auth_service.dart';
+import '../services/message_service.dart';
 import 'home_screen.dart';
 
 class RegisterScreen extends StatefulWidget {
@@ -14,13 +16,24 @@ class RegisterScreen extends StatefulWidget {
 }
 
 class _RegisterScreenState extends State<RegisterScreen> {
-  final TextEditingController _nameController = TextEditingController();
+  final TextEditingController _usernameController = TextEditingController();
+  final TextEditingController _displayNameController = TextEditingController();
   final TextEditingController _emailController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
   final TextEditingController _repeatPasswordController =
       TextEditingController();
   bool _isLoading = false;
   bool _obscurePassword = true;
+
+  @override
+  void dispose() {
+    _usernameController.dispose();
+    _displayNameController.dispose();
+    _emailController.dispose();
+    _passwordController.dispose();
+    _repeatPasswordController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -52,10 +65,20 @@ class _RegisterScreenState extends State<RegisterScreen> {
                   Column(
                     children: [
                       const SizedBox(height: 40),
-                      // Nombre de usuario
+
+                      // Username (new field)
                       CustomTextField(
                         label: 'Nombre de usuario',
-                        controller: _nameController,
+                        controller: _usernameController,
+                        keyboardType: TextInputType.text,
+                      ),
+
+                      const SizedBox(height: 16),
+
+                      // Display name
+                      CustomTextField(
+                        label: 'Nombre a mostrar',
+                        controller: _displayNameController,
                       ),
 
                       const SizedBox(height: 16),
@@ -99,7 +122,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
                       // Register button
                       _isLoading
-                          ? CircularProgressIndicator()
+                          ? CircularProgressIndicator(color: AppColors.primary)
                           : CustomButton(
                             text: 'Registrarse',
                             onPressed: _register,
@@ -118,12 +141,25 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
   Future<void> _register() async {
     // Check if any field is empty
-    if (_nameController.text.isEmpty ||
+    if (_usernameController.text.isEmpty ||
+        _displayNameController.text.isEmpty ||
         _emailController.text.isEmpty ||
         _passwordController.text.isEmpty ||
         _repeatPasswordController.text.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Por favor, rellena todos los campos')),
+      );
+      return;
+    }
+
+    // Validate username length
+    if (_usernameController.text.length < 3) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'El nombre de usuario debe tener al menos 3 caracteres',
+          ),
+        ),
       );
       return;
     }
@@ -143,41 +179,56 @@ class _RegisterScreenState extends State<RegisterScreen> {
     try {
       final authService = Provider.of<AuthService>(context, listen: false);
       bool success = await authService.signUp(
+        _usernameController.text.trim(),
         _emailController.text.trim(),
         _passwordController.text,
-        _nameController.text.trim(),
+        _displayNameController.text.trim(),
       );
 
-      setState(() {
-        _isLoading = false;
-      });
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
 
-      if (success) {
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(builder: (context) => HomeScreen()),
-        );
+        if (success) {
+          // Connect to WebSocket
+          final messageService = Provider.of<MessageService>(
+            context,
+            listen: false,
+          );
+          messageService.connectToWebSocket();
+
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(builder: (context) => HomeScreen()),
+          );
+        }
       }
     } catch (e) {
-      setState(() {
-        _isLoading = false;
-      });
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
 
-      // Display specific error messages based on the error
-      String errorMessage = 'El registro falló. Por favor, inténtalo de nuevo.';
-      if (e.toString().contains(
-        'Password must be at least 6 characters long',
-      )) {
-        errorMessage = 'La contraseña debe tener al menos 6 caracteres.';
-      } else if (e.toString().contains('email-already-in-use')) {
-        errorMessage = 'El correo electrónico ya está en uso.';
-      } else if (e.toString().contains('invalid-email')) {
-        errorMessage = 'El correo electrónico no es válido.';
+        // Display specific error messages based on the error
+        String errorMessage =
+            'El registro falló. Por favor, inténtalo de nuevo.';
+        if (e.toString().contains(
+          'Password must be at least 6 characters long',
+        )) {
+          errorMessage = 'La contraseña debe tener al menos 6 caracteres.';
+        } else if (e.toString().contains('Username already taken')) {
+          errorMessage = 'El nombre de usuario ya está en uso.';
+        } else if (e.toString().contains('Email already registered')) {
+          errorMessage = 'El correo electrónico ya está en uso.';
+        } else if (e.toString().contains('invalid-email')) {
+          errorMessage = 'El correo electrónico no es válido.';
+        }
+
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(errorMessage)));
       }
-
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(errorMessage)));
     }
   }
 }

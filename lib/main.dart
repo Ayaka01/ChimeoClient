@@ -2,10 +2,11 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'services/auth_service.dart';
-import 'services/chat_service.dart';
 import 'services/user_service.dart';
+import 'services/message_service.dart';
 import 'services/local_storage_service.dart';
 import 'screens/splash_screen.dart';
+import 'constants/colors.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -19,30 +20,49 @@ class MyApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MultiProvider(
       providers: [
+        // Local storage service is a singleton
+        Provider(create: (context) => LocalStorageService()),
+
         // Auth service
         ChangeNotifierProvider(create: (context) => AuthService()),
-
-        // Chat service depends on auth service
-        ProxyProvider<AuthService, ChatService>(
-          update: (context, auth, previous) => ChatService(auth),
-          dispose: (context, service) => service.dispose(),
-        ),
 
         // User service depends on auth service
         ProxyProvider<AuthService, UserService>(
           update: (context, auth, previous) => UserService(auth),
         ),
 
-        // Local storage service is a singleton
-        Provider(create: (context) => LocalStorageService()),
+        // Message service depends on auth service and local storage
+        ProxyProvider2<AuthService, LocalStorageService, MessageService>(
+          update:
+              (context, auth, storage, previous) =>
+                  previous == null ? MessageService(auth, storage) : previous
+                    ..updateServices(auth, storage),
+          dispose: (context, service) => service.dispose(),
+        ),
       ],
       child: MaterialApp(
         title: 'Chimeo',
         theme: ThemeData(
           primarySwatch: Colors.amber,
           visualDensity: VisualDensity.adaptivePlatformDensity,
+          appBarTheme: AppBarTheme(
+            backgroundColor: Colors.white,
+            foregroundColor: AppColors.secondary,
+            elevation: 1,
+            centerTitle: true,
+          ),
+          elevatedButtonTheme: ElevatedButtonThemeData(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.primary,
+              foregroundColor: AppColors.secondary,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
+            ),
+          ),
         ),
         home: SplashScreen(),
+        debugShowCheckedModeBanner: false,
       ),
     );
   }

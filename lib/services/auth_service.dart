@@ -53,8 +53,8 @@ class AuthService with ChangeNotifier {
 
         _user = UserModel(
           id: data['user_id'],
+          username: data['username'],
           displayName: data['display_name'],
-          email: email,
           lastSeen: DateTime.now(),
         );
 
@@ -70,7 +70,12 @@ class AuthService with ChangeNotifier {
     }
   }
 
-  Future<bool> signUp(String email, String password, String displayName) async {
+  Future<bool> signUp(
+    String username,
+    String email,
+    String password,
+    String displayName,
+  ) async {
     try {
       if (password.length < 6) {
         throw 'Password must be at least 6 characters long';
@@ -80,6 +85,7 @@ class AuthService with ChangeNotifier {
         Uri.parse('${ApiConfig.baseUrl}/auth/register'),
         headers: {'Content-Type': 'application/json'},
         body: json.encode({
+          'username': username,
           'email': email,
           'password': password,
           'display_name': displayName,
@@ -92,8 +98,8 @@ class AuthService with ChangeNotifier {
 
         _user = UserModel(
           id: data['user_id'],
-          displayName: displayName,
-          email: email,
+          username: data['username'],
+          displayName: data['display_name'],
           lastSeen: DateTime.now(),
         );
 

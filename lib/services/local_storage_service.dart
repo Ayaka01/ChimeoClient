@@ -1,110 +1,105 @@
 // lib/services/local_storage_service.dart
 import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
-import '../models/message_model.dart';
+import '../models/conversation_model.dart';
 
 class LocalStorageService {
-  // Key prefix for message storage
-  static const String _messagePrefix = 'messages_';
-  // Key for chat rooms
-  static const String _chatRoomsKey = 'chat_rooms';
+  // Key for storing conversations
+  static const String _conversationsKey = 'app_conversations';
 
-  // Save a message to local storage
-  Future<void> saveMessage(MessageModel message) async {
-    final prefs = await SharedPreferences.getInstance();
-    final chatRoomKey = '$_messagePrefix${message.chatRoomId}';
+  // Save all conversations to local storage
+  Future<void> saveConversations(
+    Map<String, ConversationModel> conversations,
+  ) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
 
-    // Get existing messages for this chat room
-    List<String> messages = prefs.getStringList(chatRoomKey) ?? [];
+      // Convert to JSON
+      final Map<String, dynamic> conversationsJson = {};
+      conversations.forEach((key, value) {
+        conversationsJson[key] = value.toJson();
+      });
 
-    // Add the new message
-    messages.add(json.encode(message.toJson()));
-
-    // Save back to shared preferences
-    await prefs.setStringList(chatRoomKey, messages);
-
-    // Make sure this chat room is in our list of chat rooms
-    await _addChatRoomToList(message.chatRoomId);
-  }
-
-  // Get all messages for a chat room
-  Future<List<MessageModel>> getMessages(String chatRoomId) async {
-    final prefs = await SharedPreferences.getInstance();
-    final chatRoomKey = '$_messagePrefix$chatRoomId';
-
-    // Get messages as strings
-    List<String> messageStrings = prefs.getStringList(chatRoomKey) ?? [];
-
-    // Convert to message objects
-    List<MessageModel> messages =
-        messageStrings.map((msgStr) {
-          return MessageModel.fromJson(json.decode(msgStr));
-        }).toList();
-
-    // Sort by timestamp, newest first
-    messages.sort((a, b) => b.timestamp.compareTo(a.timestamp));
-
-    return messages;
-  }
-
-  // Update a message (e.g., to mark as delivered)
-  Future<void> updateMessage(MessageModel message) async {
-    final prefs = await SharedPreferences.getInstance();
-    final chatRoomKey = '$_messagePrefix${message.chatRoomId}';
-
-    // Get existing messages
-    List<String> messageStrings = prefs.getStringList(chatRoomKey) ?? [];
-    List<dynamic> messageJsons =
-        messageStrings.map((str) => json.decode(str)).toList();
-
-    // Find and update the message
-    int index = messageJsons.indexWhere((msg) => msg['id'] == message.id);
-    if (index >= 0) {
-      messageJsons[index] = message.toJson();
-
-      // Save back to shared preferences
-      await prefs.setStringList(
-        chatRoomKey,
-        messageJsons.map((msg) => json.encode(msg)).toList(),
-      );
+      // Save as string
+      await prefs.setString(_conversationsKey, json.encode(conversationsJson));
+    } catch (e) {
+      print('Error saving conversations: $e');
+      throw e;
     }
   }
 
-  // Get list of all chat room IDs
-  Future<List<String>> getAllChatRooms() async {
-    final prefs = await SharedPreferences.getInstance();
-    return prefs.getStringList(_chatRoomsKey) ?? [];
-  }
+  // Retrieve conversations from local storage
+  Future<Map<String, ConversationModel>?> getConversations() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final String? conversationsJson = prefs.getString(_conversationsKey);
 
-  // Add a chat room to the list
-  Future<void> _addChatRoomToList(String chatRoomId) async {
-    final prefs = await SharedPreferences.getInstance();
-    List<String> chatRooms = prefs.getStringList(_chatRoomsKey) ?? [];
+      if (conversationsJson == null) {
+        return {};
+      }
 
-    if (!chatRooms.contains(chatRoomId)) {
-      chatRooms.add(chatRoomId);
-      await prefs.setStringList(_chatRoomsKey, chatRooms);
+      // Parse from JSON
+      final Map<String, dynamic> decodedJson = json.decode(conversationsJson);
+      final Map<String, ConversationModel> conversations = {};
+
+      decodedJson.forEach((key, value) {
+        conversations[key] = ConversationModel.fromJson(value);
+      });
+
+      return conversations;
+    } catch (e) {
+      print('Error retrieving conversations: $e');
+      return {};
     }
   }
 
-  // Clear all messages for a chat room
-  Future<void> clearMessages(String chatRoomId) async {
-    final prefs = await SharedPreferences.getInstance();
-    final chatRoomKey = '$_messagePrefix$chatRoomId';
-    await prefs.remove(chatRoomKey);
+  // Save a single conversation
+  Future<void> saveConversation(
+    String friendId,
+    ConversationModel conversation,
+  ) async {
+    try {
+      // Get existing conversations
+      final conversations = await getConversations() ?? {};
+
+      // Update the specific conversation
+      conversations[friendId] = conversation;
+
+      // Save all conversations
+      await saveConversations(conversations);
+    } catch (e) {
+      print('Error saving conversation: $e');
+      throw e;
+    }
   }
 
-  // Clear all stored data
-  Future<void> clearAll() async {
-    final prefs = await SharedPreferences.getInstance();
-    List<String> chatRooms = prefs.getStringList(_chatRoomsKey) ?? [];
+  // Delete a conversation
+  Future<void> deleteConversation(String friendId) async {
+    try {
+      // Get existing conversations
+      final conversations = await getConversations() ?? {};
 
-    // Remove all chat room messages
-    for (String chatRoomId in chatRooms) {
-      await prefs.remove('$_messagePrefix$chatRoomId');
+      // Remove the specified conversation
+      if (conversations.containsKey(friendId)) {
+        conversations.remove(friendId);
+
+        // Save the updated conversations
+        await saveConversations(conversations);
+      }
+    } catch (e) {
+      print('Error deleting conversation: $e');
+      throw e;
     }
+  }
 
-    // Remove chat rooms list
-    await prefs.remove(_chatRoomsKey);
+  // Clear all stored conversations
+  Future<void> clearAllConversations() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove(_conversationsKey);
+    } catch (e) {
+      print('Error clearing conversations: $e');
+      throw e;
+    }
   }
 }

@@ -1,12 +1,12 @@
 // lib/screens/splash_screen.dart
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:simple_messenger/constants/colors.dart';
+import '../constants/colors.dart';
 import '../services/auth_service.dart';
+import '../services/message_service.dart';
 import 'home_screen.dart';
 import 'login_screen.dart';
 
-// SplashScreen es una pantalla con estado, porque se comprueba el estado de autenticación
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
 
@@ -14,7 +14,6 @@ class SplashScreen extends StatefulWidget {
   _SplashScreenState createState() => _SplashScreenState();
 }
 
-// A la hora de trabajar con un widget con estado, se debe crear otra clase que extienda de State
 class _SplashScreenState extends State<SplashScreen> {
   @override
   void initState() {
@@ -29,13 +28,25 @@ class _SplashScreenState extends State<SplashScreen> {
     if (!mounted) return;
 
     final authService = Provider.of<AuthService>(context, listen: false);
+    final messageService = Provider.of<MessageService>(context, listen: false);
+
+    // If authenticated, ensure connection to WebSocket before navigating
+    if (authService.isAuthenticated) {
+      // Connect to WebSocket if not already connected
+      if (!messageService.isConnected) {
+        messageService.connectToWebSocket();
+      }
+
+      // Load any pending messages
+      await messageService.getPendingMessages();
+    }
 
     Navigator.pushReplacement(
       context,
       MaterialPageRoute(
         builder:
             (context) =>
-                authService.user != null ? HomeScreen() : LoginScreen(),
+                authService.isAuthenticated ? HomeScreen() : LoginScreen(),
       ),
     );
   }
@@ -47,14 +58,14 @@ class _SplashScreenState extends State<SplashScreen> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(Icons.done, size: 80, color: AppColors.primary),
+            Icon(Icons.chat_bubble_outline, size: 80, color: AppColors.primary),
             SizedBox(height: 24),
             Text(
               'Chimeo',
               style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
             ),
             SizedBox(height: 24),
-            CircularProgressIndicator(),
+            CircularProgressIndicator(color: AppColors.primary),
           ],
         ),
       ),
