@@ -1,9 +1,10 @@
-// lib/main.dart - App Entry Point
+// lib/main.dart
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'services/auth_service.dart';
 import 'services/chat_service.dart';
 import 'services/user_service.dart';
+import 'services/local_storage_service.dart';
 import 'screens/splash_screen.dart';
 
 void main() async {
@@ -18,14 +19,22 @@ class MyApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MultiProvider(
       providers: [
+        // Auth service
         ChangeNotifierProvider(create: (context) => AuthService()),
+
+        // Chat service depends on auth service
         ProxyProvider<AuthService, ChatService>(
           update: (context, auth, previous) => ChatService(auth),
           dispose: (context, service) => service.dispose(),
         ),
+
+        // User service depends on auth service
         ProxyProvider<AuthService, UserService>(
           update: (context, auth, previous) => UserService(auth),
         ),
+
+        // Local storage service is a singleton
+        Provider(create: (context) => LocalStorageService()),
       ],
       child: MaterialApp(
         title: 'Chimeo',

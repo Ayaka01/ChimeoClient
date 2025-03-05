@@ -7,14 +7,18 @@ import '../models/message_model.dart';
 import '../models/chat_room_model.dart';
 import '../config/api_config.dart';
 import 'auth_service.dart';
+import 'local_storage_service.dart';
 
 class ChatService {
   final AuthService _authService;
+  final LocalStorageService _localStorageService = LocalStorageService();
   WebSocketChannel? _wsChannel;
   final _messageController = StreamController<MessageModel>.broadcast();
+  final _deliveryController = StreamController<String>.broadcast();
   final Map<String, bool> _joinedRooms = {};
 
   Stream<MessageModel> get messagesStream => _messageController.stream;
+  Stream<String> get deliveryStream => _deliveryController.stream;
 
   ChatService(this._authService) {
     _initWebSocket();
@@ -33,7 +37,20 @@ class ChatService {
 
             if (jsonData['type'] == 'new_message') {
               final message = MessageModel.fromJson(jsonData['data']);
+
+              // Save the message locally
+              _localStorageService.saveMessage(message);
+
+              // Forward to UI
               _messageController.add(message);
+
+              // Send delivery confirmation to server
+              _markAsDelivered(message.id);
+            } else if (jsonData['type'] == 'message_delivered') {
+              final messageId = jsonData['data']['message_id'];
+
+              // Notify UI that a message was delivered
+              _deliveryController.add(messageId);
             }
           },
           onDone: () {
@@ -72,13 +89,14 @@ class ChatService {
     }
   }
 
-  String getChatRoomId(String user1, String user2) {
-    // Create a consistent room ID regardless of who initiated the chat
-    return user1.compareTo(user2) > 0 ? '$user1-$user2' : '$user2-$user1';
-  }
-
   Future<List<MessageModel>> getMessages(String roomId) async {
     try {
+      // First, get locally stored messages
+      List<MessageModel> localMessages = await _localStorageService.getMessages(
+        roomId,
+      );
+
+      // Then, get any undelivered messages from the server
       final response = await http.get(
         Uri.parse('${ApiConfig.baseUrl}/messages/$roomId'),
         headers: {'Authorization': 'Bearer ${_authService.token}'},
@@ -86,13 +104,70 @@ class ChatService {
 
       if (response.statusCode == 200) {
         final List<dynamic> data = json.decode(response.body);
-        return data.map((json) => MessageModel.fromJson(json)).toList();
+        List<MessageModel> serverMessages =
+            data.map((json) => MessageModel.fromJson(json)).toList();
+
+        // Save server messages locally
+        for (var message in serverMessages) {
+          await _localStorageService.saveMessage(message);
+
+          // Mark messages as delivered
+          await _markAsDelivered(message.id);
+        }
+
+        // Combine and re-sort all messages
+        localMessages.addAll(serverMessages);
+        localMessages.sort((a, b) => b.timestamp.compareTo(a.timestamp));
+
+        return localMessages;
       }
 
-      return [];
+      // Return local messages if server request fails
+      return localMessages;
     } catch (e) {
       print('Error getting messages: $e');
-      return [];
+
+      // Return locally stored messages in case of error
+      return await _localStorageService.getMessages(roomId);
+    }
+  }
+
+  Future<void> _markAsDelivered(String messageId) async {
+    try {
+      // Send delivery confirmation to server
+      await http.post(
+        Uri.parse('${ApiConfig.baseUrl}/messages/$messageId/delivered'),
+        headers: {'Authorization': 'Bearer ${_authService.token}'},
+      );
+
+      // Update message in local storage
+      // First we need to find the message
+      List<String> chatRooms = await _localStorageService.getAllChatRooms();
+
+      for (String roomId in chatRooms) {
+        List<MessageModel> messages = await _localStorageService.getMessages(
+          roomId,
+        );
+        MessageModel? message = messages.firstWhere(
+          (msg) => msg.id == messageId,
+          orElse:
+              () => MessageModel(
+                id: '',
+                senderId: '',
+                text: '',
+                timestamp: DateTime.now(),
+                chatRoomId: '',
+              ),
+        );
+
+        if (message.id.isNotEmpty) {
+          message.delivered = true;
+          await _localStorageService.updateMessage(message);
+          break;
+        }
+      }
+    } catch (e) {
+      print('Error marking message as delivered: $e');
     }
   }
 
@@ -116,7 +191,14 @@ class ChatService {
       );
 
       if (response.statusCode == 200) {
-        return MessageModel.fromJson(json.decode(response.body));
+        MessageModel message = MessageModel.fromJson(
+          json.decode(response.body),
+        );
+
+        // Save message locally
+        await _localStorageService.saveMessage(message);
+
+        return message;
       }
 
       return null;
@@ -165,6 +247,7 @@ class ChatService {
 
   void dispose() {
     _messageController.close();
+    _deliveryController.close();
     _wsChannel?.sink.close();
   }
 }

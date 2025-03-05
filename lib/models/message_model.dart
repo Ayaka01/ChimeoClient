@@ -5,6 +5,7 @@ class MessageModel {
   final String text;
   final DateTime timestamp;
   final String chatRoomId;
+  bool delivered; // Added delivery status flag
 
   MessageModel({
     required this.id,
@@ -12,6 +13,7 @@ class MessageModel {
     required this.text,
     required this.timestamp,
     required this.chatRoomId,
+    this.delivered = false, // Default to not delivered
   });
 
   factory MessageModel.fromJson(Map<String, dynamic> json) {
@@ -24,6 +26,7 @@ class MessageModel {
               ? DateTime.parse(json['timestamp'])
               : DateTime.now(),
       chatRoomId: json['chat_room_id'],
+      delivered: json['delivered'] ?? false,
     );
   }
 
@@ -34,6 +37,7 @@ class MessageModel {
       'text': text,
       'timestamp': timestamp.toIso8601String(),
       'chat_room_id': chatRoomId,
+      'delivered': delivered,
     };
   }
 }
