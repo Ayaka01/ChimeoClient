@@ -6,6 +6,7 @@ class CustomButton extends StatelessWidget {
   final bool isLoading;
 
   const CustomButton({
+    super.key,
     required this.text,
     required this.onPressed,
     this.isLoading = false,

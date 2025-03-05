@@ -14,10 +14,10 @@ class ChatScreen extends StatefulWidget {
   const ChatScreen({super.key, required this.friend});
 
   @override
-  _ChatScreenState createState() => _ChatScreenState();
+  ChatScreenState createState() => ChatScreenState();
 }
 
-class _ChatScreenState extends State<ChatScreen> {
+class ChatScreenState extends State<ChatScreen> {
   final TextEditingController _messageController = TextEditingController();
   late MessageService _messageService;
   late AuthService _authService;
@@ -60,6 +60,8 @@ class _ChatScreenState extends State<ChatScreen> {
     super.dispose();
   }
 
+  // Updated _sendMessage method with mounted check
+
   void _sendMessage() async {
     final text = _messageController.text.trim();
     if (text.isEmpty) return;
@@ -73,6 +75,9 @@ class _ChatScreenState extends State<ChatScreen> {
       _messageController.clear();
 
       final message = await _messageService.sendMessage(widget.friend.id, text);
+
+      // Check if widget is still mounted before using context
+      if (!mounted) return;
 
       setState(() {
         _isSending = false;
@@ -91,16 +96,22 @@ class _ChatScreenState extends State<ChatScreen> {
         });
       } else {
         // Show error if message wasn't sent
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              'No se pudo enviar el mensaje. Comprueba tu conexión.',
+        // Added mounted check before using context
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                'No se pudo enviar el mensaje. Comprueba tu conexión.',
+              ),
+              backgroundColor: Colors.red,
             ),
-            backgroundColor: Colors.red,
-          ),
-        );
+          );
+        }
       }
     } catch (e) {
+      // Check if widget is still mounted before using context
+      if (!mounted) return;
+
       setState(() {
         _isSending = false;
       });
@@ -135,28 +146,51 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   void _deleteMessage(MessageModel message) {
+    // Create a local function to handle the deletion process
+    Future<void> performDeletion(BuildContext dialogContext) async {
+      try {
+        await _messageService.deleteMessage(widget.friend.id, message.id);
+
+        // It's safe to use dialogContext here since we're in a closure that captures it
+        if (dialogContext.mounted) {
+          Navigator.pop(dialogContext);
+        }
+
+        // Check if the widget is still mounted before calling setState
+        if (mounted) {
+          setState(() {});
+        }
+      } catch (e) {
+        // Handle any errors that might occur during deletion
+        if (dialogContext.mounted) {
+          Navigator.pop(dialogContext);
+          ScaffoldMessenger.of(dialogContext).showSnackBar(
+            SnackBar(
+              content: Text('Error al eliminar el mensaje: ${e.toString()}'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      }
+    }
+
+    // Show the confirmation dialog
     showDialog(
       context: context,
       builder:
-          (context) => AlertDialog(
+          (dialogContext) => AlertDialog(
             title: Text('Eliminar mensaje'),
             content: Text(
               '¿Estás seguro de que quieres eliminar este mensaje? Esta acción solo afecta a tu dispositivo.',
             ),
             actions: [
               TextButton(
-                onPressed: () => Navigator.pop(context),
+                onPressed: () => Navigator.pop(dialogContext),
                 child: Text('Cancelar'),
               ),
               TextButton(
-                onPressed: () async {
-                  await _messageService.deleteMessage(
-                    widget.friend.id,
-                    message.id,
-                  );
-                  Navigator.pop(context);
-                  setState(() {});
-                },
+                // Pass the dialogContext to our local function
+                onPressed: () => performDeletion(dialogContext),
                 child: Text('Eliminar', style: TextStyle(color: Colors.red)),
               ),
             ],
@@ -365,25 +399,55 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   void _showDeleteConversationDialog() {
+    // Create a local function to handle the deletion process
+    Future<void> performConversationDeletion(BuildContext dialogContext) async {
+      try {
+        await _messageService.deleteConversation(widget.friend.id);
+
+        // Check if contexts are still valid after async operation
+        if (dialogContext.mounted) {
+          Navigator.pop(dialogContext); // Close dialog
+        }
+
+        if (mounted) {
+          Navigator.pop(context); // Go back to home screen
+        }
+      } catch (e) {
+        // Handle any errors that might occur during deletion
+        if (dialogContext.mounted) {
+          Navigator.pop(dialogContext);
+
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(
+                  'Error al eliminar la conversación: ${e.toString()}',
+                ),
+                backgroundColor: Colors.red,
+              ),
+            );
+          }
+        }
+      }
+    }
+
+    // Show the confirmation dialog
     showDialog(
       context: context,
       builder:
-          (context) => AlertDialog(
+          (dialogContext) => AlertDialog(
             title: Text('Eliminar conversación'),
             content: Text(
               '¿Estás seguro de que quieres eliminar esta conversación? Se borrarán todos los mensajes de este dispositivo.',
             ),
             actions: [
               TextButton(
-                onPressed: () => Navigator.pop(context),
+                onPressed: () => Navigator.pop(dialogContext),
                 child: Text('Cancelar'),
               ),
               TextButton(
-                onPressed: () async {
-                  await _messageService.deleteConversation(widget.friend.id);
-                  Navigator.pop(context); // Close dialog
-                  Navigator.pop(context); // Go back to home screen
-                },
+                // Pass the dialogContext to our local function
+                onPressed: () => performConversationDeletion(dialogContext),
                 child: Text('Eliminar', style: TextStyle(color: Colors.red)),
               ),
             ],

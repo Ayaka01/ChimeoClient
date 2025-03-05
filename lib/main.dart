@@ -32,12 +32,20 @@ class MyApp extends StatelessWidget {
         ),
 
         // Message service depends on auth service and local storage
-        ProxyProvider2<AuthService, LocalStorageService, MessageService>(
+        // Using ChangeNotifierProxyProvider2 instead of ProxyProvider2
+        ChangeNotifierProxyProvider2<
+          AuthService,
+          LocalStorageService,
+          MessageService
+        >(
+          create:
+              (context) => MessageService(
+                Provider.of<AuthService>(context, listen: false),
+                Provider.of<LocalStorageService>(context, listen: false),
+              ),
           update:
               (context, auth, storage, previous) =>
-                  previous == null ? MessageService(auth, storage) : previous
-                    ..updateServices(auth, storage),
-          dispose: (context, service) => service.dispose(),
+                  previous!..updateServices(auth, storage),
         ),
       ],
       child: MaterialApp(

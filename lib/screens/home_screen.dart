@@ -16,10 +16,10 @@ class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
 
   @override
-  _HomeScreenState createState() => _HomeScreenState();
+  HomeScreenState createState() => HomeScreenState();
 }
 
-class _HomeScreenState extends State<HomeScreen>
+class HomeScreenState extends State<HomeScreen>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
   late UserService _userService;
@@ -72,13 +72,19 @@ class _HomeScreenState extends State<HomeScreen>
   }
 
   void _signOut() async {
+    // Store mounted state before async operation
+    final isWidgetMounted = mounted;
+
     await _authService.signOut();
 
-    Navigator.pushAndRemoveUntil(
-      context,
-      MaterialPageRoute(builder: (context) => LoginScreen()),
-      (route) => false,
-    );
+    // Check if widget is still mounted after async operation
+    if (isWidgetMounted && mounted) {
+      Navigator.pushAndRemoveUntil(
+        context,
+        MaterialPageRoute(builder: (context) => LoginScreen()),
+        (route) => false,
+      );
+    }
   }
 
   @override

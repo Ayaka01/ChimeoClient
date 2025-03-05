@@ -8,6 +8,7 @@ class CustomTextField extends StatelessWidget {
   final TextInputType? keyboardType;
 
   const CustomTextField({
+    super.key,
     required this.label,
     required this.controller,
     this.obscureText = false,

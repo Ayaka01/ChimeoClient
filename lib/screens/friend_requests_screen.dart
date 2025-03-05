@@ -8,10 +8,10 @@ class FriendRequestsScreen extends StatefulWidget {
   const FriendRequestsScreen({super.key});
 
   @override
-  _FriendRequestsScreenState createState() => _FriendRequestsScreenState();
+  FriendRequestsScreenState createState() => FriendRequestsScreenState();
 }
 
-class _FriendRequestsScreenState extends State<FriendRequestsScreen>
+class FriendRequestsScreenState extends State<FriendRequestsScreen>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
   late UserService _userService;
@@ -66,10 +66,16 @@ class _FriendRequestsScreenState extends State<FriendRequestsScreen>
 
   Future<void> _respondToRequest(String requestId, String action) async {
     try {
+      // Store mounted state before async operation
+      final isWidgetMounted = mounted;
+
       final result = await _userService.respondToFriendRequest(
         requestId,
         action,
       );
+
+      // Check if widget is still mounted after async operation
+      if (!isWidgetMounted) return;
 
       if (result != null) {
         // Reload the lists
@@ -82,14 +88,20 @@ class _FriendRequestsScreenState extends State<FriendRequestsScreen>
                 ? 'Solicitud aceptada. ¡Ahora son amigos!'
                 : 'Solicitud rechazada.';
 
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text(message)));
+        // Check context is still valid before using ScaffoldMessenger
+        if (mounted) {
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(SnackBar(content: Text(message)));
+        }
       }
     } catch (e) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Error: ${e.toString()}')));
+      // Check if widget is still mounted before showing error
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Error: ${e.toString()}')));
+      }
     }
   }
 

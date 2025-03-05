@@ -15,9 +15,9 @@ class MessageService with ChangeNotifier {
   AuthService _authService;
   LocalStorageService _storageService;
   WebSocketChannel? _wsChannel;
-  StreamController<MessageModel> _messageController =
+  final StreamController<MessageModel> _messageController =
       StreamController<MessageModel>.broadcast();
-  StreamController<String> _deliveryController =
+  final StreamController<String> _deliveryController =
       StreamController<String>.broadcast();
   Map<String, ConversationModel> _conversations = {};
   Timer? _reconnectTimer;
@@ -345,6 +345,7 @@ class MessageService with ChangeNotifier {
   }
 
   // Clean up
+  @override
   void dispose() {
     _wsChannel?.sink.close();
     _messageController.close();

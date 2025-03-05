@@ -15,6 +15,9 @@ class SplashScreen extends StatefulWidget {
 }
 
 class _SplashScreenState extends State<SplashScreen> {
+  bool _isLoading = true;
+  String? _errorMessage;
+
   @override
   void initState() {
     super.initState();
@@ -22,33 +25,65 @@ class _SplashScreenState extends State<SplashScreen> {
   }
 
   Future<void> _checkAuthStatus() async {
-    // Give it some time to show the splash screen
-    await Future.delayed(Duration(seconds: 2));
+    try {
+      // Give it some time to show the splash screen
+      await Future.delayed(Duration(seconds: 2));
 
-    if (!mounted) return;
+      if (!mounted) return;
 
-    final authService = Provider.of<AuthService>(context, listen: false);
-    final messageService = Provider.of<MessageService>(context, listen: false);
+      final authService = Provider.of<AuthService>(context, listen: false);
+      final messageService = Provider.of<MessageService>(
+        context,
+        listen: false,
+      );
 
-    // If authenticated, ensure connection to WebSocket before navigating
-    if (authService.isAuthenticated) {
-      // Connect to WebSocket if not already connected
-      if (!messageService.isConnected) {
-        messageService.connectToWebSocket();
+      // If authenticated, ensure connection to WebSocket before navigating
+      if (authService.isAuthenticated) {
+        try {
+          // Connect to WebSocket if not already connected
+          if (!messageService.isConnected) {
+            messageService.connectToWebSocket();
+          }
+
+          // Set a timeout for the WebSocket connection
+          await Future.delayed(Duration(seconds: 5));
+
+          // Load any pending messages
+          await messageService.getPendingMessages();
+        } catch (e) {
+          print('Error connecting to WebSocket or fetching messages: $e');
+          // Continue to the home screen even if WebSocket fails
+          // The app should handle reconnection later
+        }
       }
 
-      // Load any pending messages
-      await messageService.getPendingMessages();
-    }
+      setState(() {
+        _isLoading = false;
+      });
 
-    Navigator.pushReplacement(
-      context,
-      MaterialPageRoute(
-        builder:
-            (context) =>
-                authService.isAuthenticated ? HomeScreen() : LoginScreen(),
-      ),
-    );
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(
+          builder:
+              (context) =>
+                  authService.isAuthenticated ? HomeScreen() : LoginScreen(),
+        ),
+      );
+    } catch (e) {
+      setState(() {
+        _isLoading = false;
+        _errorMessage = "Error initializing app: $e";
+      });
+
+      // After a delay, go to login screen anyway
+      await Future.delayed(Duration(seconds: 3));
+      if (mounted) {
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (context) => LoginScreen()),
+        );
+      }
+    }
   }
 
   @override
@@ -65,7 +100,20 @@ class _SplashScreenState extends State<SplashScreen> {
               style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
             ),
             SizedBox(height: 24),
-            CircularProgressIndicator(color: AppColors.primary),
+            if (_isLoading)
+              CircularProgressIndicator(color: AppColors.primary)
+            else if (_errorMessage != null)
+              Column(
+                children: [
+                  Icon(Icons.error_outline, color: Colors.red, size: 40),
+                  SizedBox(height: 16),
+                  Text(
+                    _errorMessage!,
+                    style: TextStyle(color: Colors.red),
+                    textAlign: TextAlign.center,
+                  ),
+                ],
+              ),
           ],
         ),
       ),
