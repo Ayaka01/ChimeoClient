@@ -2,13 +2,13 @@
 import 'package:simple_messenger/models/message_model.dart';
 
 class ConversationModel {
-  final String friendId;
+  final String friendUsername;
   final String friendName;
   final List<MessageModel> messages;
   final DateTime? lastMessageTime;
 
   ConversationModel({
-    required this.friendId,
+    required this.friendUsername,
     required this.friendName,
     required this.messages,
     this.lastMessageTime,
@@ -33,7 +33,7 @@ class ConversationModel {
   // Convert to a simple JSON for storage
   Map<String, dynamic> toJson() {
     return {
-      'friend_id': friendId,
+      'friend_username': friendUsername,
       'friend_name': friendName,
       'messages': messages.map((m) => m.toJson()).toList(),
       'last_message_time': lastMessageTime?.toIso8601String(),
@@ -43,7 +43,7 @@ class ConversationModel {
   // Create from storage JSON
   factory ConversationModel.fromJson(Map<String, dynamic> json) {
     return ConversationModel(
-      friendId: json['friend_id'],
+      friendUsername: json['friend_username'],
       friendName: json['friend_name'],
       messages:
           (json['messages'] as List)

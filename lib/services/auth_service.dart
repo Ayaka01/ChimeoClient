@@ -52,7 +52,6 @@ class AuthService with ChangeNotifier {
         _token = data['access_token'];
 
         _user = UserModel(
-          id: data['user_id'],
           username: data['username'],
           displayName: data['display_name'],
           lastSeen: DateTime.now(),
@@ -93,7 +92,6 @@ class AuthService with ChangeNotifier {
         _token = data['access_token'];
 
         _user = UserModel(
-          id: data['user_id'],
           username: data['username'],
           displayName: data['display_name'],
           lastSeen: DateTime.now(),

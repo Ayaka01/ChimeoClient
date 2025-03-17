@@ -66,14 +66,14 @@ class _SearchUsersScreenState extends State<SearchUsersScreen> {
 
   Future<void> _sendFriendRequest(UserModel user) async {
     setState(() {
-      _requestInProgress[user.id] = true;
+      _requestInProgress[user.username] = true;
     });
 
     try {
       final request = await _userService.sendFriendRequest(user.username);
 
       setState(() {
-        _requestInProgress[user.id] = false;
+        _requestInProgress[user.username] = false;
       });
 
       if (request == 'accepted') {
@@ -102,7 +102,7 @@ class _SearchUsersScreenState extends State<SearchUsersScreen> {
       }
     } catch (e) {
       setState(() {
-        _requestInProgress[user.id] = false;
+        _requestInProgress[user.username] = false;
       });
 
       ScaffoldMessenger.of(context).showSnackBar(
@@ -210,7 +210,7 @@ class _SearchUsersScreenState extends State<SearchUsersScreen> {
       itemCount: _searchResults.length,
       itemBuilder: (context, index) {
         final user = _searchResults[index];
-        final isRequesting = _requestInProgress[user.id] ?? false;
+        final isRequesting = _requestInProgress[user.username] ?? false;
 
         return Card(
           margin: EdgeInsets.symmetric(horizontal: 16, vertical: 8),

@@ -1,12 +1,10 @@
 // lib/models/user_model.dart
 class UserModel {
-  final String id;
   final String username;
   final String displayName;
   final DateTime lastSeen;
 
   UserModel({
-    required this.id,
     required this.username,
     required this.displayName,
     required this.lastSeen,
@@ -14,7 +12,6 @@ class UserModel {
 
   factory UserModel.fromJson(Map<String, dynamic> json) {
     return UserModel(
-      id: json['id'],
       username: json['username'],
       displayName: json['display_name'],
       lastSeen:
@@ -26,7 +23,6 @@ class UserModel {
 
   Map<String, dynamic> toJson() {
     return {
-      'id': id,
       'username': username,
       'display_name': displayName,
       'last_seen': lastSeen.toIso8601String(),

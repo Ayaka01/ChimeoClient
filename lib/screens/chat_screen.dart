@@ -39,10 +39,10 @@ class ChatScreenState extends State<ChatScreen> {
     // Listen for new messages
     _messageService.messagesStream.listen((message) {
       // Filter only for this conversation
-      if ((message.senderId == widget.friend.id &&
-              message.recipientId == _authService.user!.id) ||
-          (message.senderId == _authService.user!.id &&
-              message.recipientId == widget.friend.id)) {
+      if ((message.senderId == widget.friend.username &&
+              message.recipientId == _authService.user!.username) ||
+          (message.senderId == _authService.user!.username &&
+              message.recipientId == widget.friend.username)) {
         setState(() {});
       }
     });
@@ -74,7 +74,10 @@ class ChatScreenState extends State<ChatScreen> {
       // Clear text field before sending to avoid duplicate send
       _messageController.clear();
 
-      final message = await _messageService.sendMessage(widget.friend.id, text);
+      final message = await _messageService.sendMessage(
+        widget.friend.username,
+        text,
+      );
 
       // Check if widget is still mounted before using context
       if (!mounted) return;
@@ -149,7 +152,7 @@ class ChatScreenState extends State<ChatScreen> {
     // Create a local function to handle the deletion process
     Future<void> performDeletion(BuildContext dialogContext) async {
       try {
-        await _messageService.deleteMessage(widget.friend.id, message.id);
+        await _messageService.deleteMessage(widget.friend.username, message.id);
 
         // It's safe to use dialogContext here since we're in a closure that captures it
         if (dialogContext.mounted) {
@@ -202,9 +205,9 @@ class ChatScreenState extends State<ChatScreen> {
   Widget build(BuildContext context) {
     // Get the updated conversation
     _conversation =
-        _messageService.conversations[widget.friend.id] ??
+        _messageService.conversations[widget.friend.username] ??
         ConversationModel(
-          friendId: widget.friend.id,
+          friendUsername: widget.friend.username,
           friendName: widget.friend.displayName,
           messages: [],
         );
@@ -255,7 +258,7 @@ class ChatScreenState extends State<ChatScreen> {
                       itemBuilder: (context, index) {
                         final message = _conversation.messages[index];
                         final isMyMessage =
-                            message.senderId == _authService.user!.id;
+                            message.senderId == _authService.user!.username;
 
                         return GestureDetector(
                           onLongPress: () => _showMessageOptions(message),
@@ -402,7 +405,7 @@ class ChatScreenState extends State<ChatScreen> {
     // Create a local function to handle the deletion process
     Future<void> performConversationDeletion(BuildContext dialogContext) async {
       try {
-        await _messageService.deleteConversation(widget.friend.id);
+        await _messageService.deleteConversation(widget.friend.username);
 
         // Check if contexts are still valid after async operation
         if (dialogContext.mounted) {

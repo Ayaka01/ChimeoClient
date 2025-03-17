@@ -76,7 +76,8 @@ class MessageService with ChangeNotifier {
     if (_authService.user == null || _authService.token == null) return;
 
     try {
-      final wsUrl = '${ApiConfig.wsUrl}/messages/ws/${_authService.user!.id}';
+      final wsUrl =
+          '${ApiConfig.wsUrl}/messages/ws/${_authService.user!.username}';
 
       _wsChannel = WebSocketChannel.connect(Uri.parse(wsUrl));
 
@@ -137,7 +138,7 @@ class MessageService with ChangeNotifier {
 
     // Find the conversation or create a new one
     String conversationId = message.senderId;
-    if (message.senderId == _authService.user!.id) {
+    if (message.senderId == _authService.user!.username) {
       conversationId = message.recipientId;
     }
 
@@ -145,7 +146,7 @@ class MessageService with ChangeNotifier {
       // No existing conversation, create a new one
       // We'll need to fetch the user's name elsewhere
       _conversations[conversationId] = ConversationModel(
-        friendId: conversationId,
+        friendUsername: conversationId,
         friendName: 'User', // Placeholder, should be updated later
         messages: [],
       );
@@ -155,7 +156,7 @@ class MessageService with ChangeNotifier {
     _conversations[conversationId]!.addMessage(message);
 
     // Mark as delivered if we received it
-    if (message.senderId != _authService.user!.id) {
+    if (message.senderId != _authService.user!.username) {
       markMessageAsDelivered(message.id);
     }
 
@@ -207,7 +208,7 @@ class MessageService with ChangeNotifier {
         if (!_conversations.containsKey(recipientId)) {
           // Create new conversation if needed
           _conversations[recipientId] = ConversationModel(
-            friendId: recipientId,
+            friendUsername: recipientId,
             friendName: 'User', // Placeholder, should be updated
             messages: [],
           );
@@ -289,9 +290,9 @@ class MessageService with ChangeNotifier {
 
   // Fetch or create a conversation with a friend
   ConversationModel getOrCreateConversation(UserModel friend) {
-    if (!_conversations.containsKey(friend.id)) {
-      _conversations[friend.id] = ConversationModel(
-        friendId: friend.id,
+    if (!_conversations.containsKey(friend.username)) {
+      _conversations[friend.username] = ConversationModel(
+        friendUsername: friend.username,
         friendName: friend.displayName,
         messages: [],
       );
@@ -301,12 +302,12 @@ class MessageService with ChangeNotifier {
       notifyListeners();
     } else {
       // Update friend name if it has changed
-      if (_conversations[friend.id]!.friendName != friend.displayName) {
-        _conversations[friend.id] = ConversationModel(
-          friendId: friend.id,
+      if (_conversations[friend.username]!.friendName != friend.displayName) {
+        _conversations[friend.username] = ConversationModel(
+          friendUsername: friend.username,
           friendName: friend.displayName,
-          messages: _conversations[friend.id]!.messages,
-          lastMessageTime: _conversations[friend.id]!.lastMessageTime,
+          messages: _conversations[friend.username]!.messages,
+          lastMessageTime: _conversations[friend.username]!.lastMessageTime,
         );
 
         // Save to local storage
@@ -315,7 +316,7 @@ class MessageService with ChangeNotifier {
       }
     }
 
-    return _conversations[friend.id]!;
+    return _conversations[friend.username]!;
   }
 
   // Delete a conversation

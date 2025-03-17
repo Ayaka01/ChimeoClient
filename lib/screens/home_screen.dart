@@ -195,7 +195,7 @@ class HomeScreenState extends State<HomeScreen>
                 ),
               SizedBox(height: 4),
               if (lastMessage != null &&
-                  lastMessage.senderId == _authService.user!.id)
+                  lastMessage.senderId == _authService.user!.username)
                 Icon(
                   lastMessage.delivered ? Icons.done_all : Icons.done,
                   size: 16,
@@ -206,10 +206,9 @@ class HomeScreenState extends State<HomeScreen>
           onTap: () {
             // Find the friend from our list
             final friend = _friends.firstWhere(
-              (f) => f.id == friendId,
+              (f) => f.username == friendId,
               orElse:
                   () => UserModel(
-                    id: friendId,
                     username: '',
                     displayName: conversation.friendName,
                     lastSeen: DateTime.now(),
