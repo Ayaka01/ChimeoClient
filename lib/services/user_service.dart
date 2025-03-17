@@ -54,7 +54,7 @@ class UserService {
   }
 
   // Send a friend request
-  Future<FriendRequestModel?> sendFriendRequest(String username) async {
+  Future<String?> sendFriendRequest(String username) async {
     try {
       final response = await http.post(
         Uri.parse('${ApiConfig.baseUrl}/users/friends/request'),
@@ -66,7 +66,11 @@ class UserService {
       );
 
       if (response.statusCode == 200) {
-        return FriendRequestModel.fromJson(json.decode(response.body));
+        final requestStatus = json.decode(response.body);
+        return requestStatus['status'];
+      } else if (response.statusCode == 400) {
+        final errorResponse = json.decode(response.body);
+        return errorResponse['detail'];
       }
 
       return null;

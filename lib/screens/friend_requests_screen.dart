@@ -44,7 +44,6 @@ class FriendRequestsScreenState extends State<FriendRequestsScreen>
     final requests = await _userService.getReceivedFriendRequests(
       status: 'pending',
     );
-
     setState(() {
       _receivedRequests = requests;
       _isLoadingReceived = false;

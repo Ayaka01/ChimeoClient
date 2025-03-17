@@ -77,10 +77,6 @@ class AuthService with ChangeNotifier {
     String displayName,
   ) async {
     try {
-      if (password.length < 6) {
-        throw 'Password must be at least 6 characters long';
-      }
-
       final response = await http.post(
         Uri.parse('${ApiConfig.baseUrl}/auth/register'),
         headers: {'Content-Type': 'application/json'},
@@ -92,7 +88,7 @@ class AuthService with ChangeNotifier {
         }),
       );
 
-      if (response.statusCode == 200) {
+      if (response.statusCode == 201) {
         final data = json.decode(response.body);
         _token = data['access_token'];
 

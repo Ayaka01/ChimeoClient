@@ -76,20 +76,27 @@ class _SearchUsersScreenState extends State<SearchUsersScreen> {
         _requestInProgress[user.id] = false;
       });
 
-      if (request != null) {
+      if (request == 'accepted') {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Solicitud enviada a ${user.displayName}'),
+            content: Text(
+              "Great news! Since both of you sent friend requests to each other, you're now connected as friends!",
+            ),
+            backgroundColor: Colors.green,
+          ),
+        );
+      } else if (request == 'pending') {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Request sent.'),
             backgroundColor: Colors.green,
           ),
         );
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(
-              'No se pudo enviar la solicitud. Es posible que ya exista una solicitud o que ya sean amigos.',
-            ),
-            backgroundColor: Colors.orange,
+            content: Text(request ?? "Error sending friend request"),
+            backgroundColor: Colors.red,
           ),
         );
       }

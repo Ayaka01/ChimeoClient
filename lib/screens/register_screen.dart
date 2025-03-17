@@ -151,7 +151,6 @@ class RegisterScreenState extends State<RegisterScreen> {
       );
       return;
     }
-
     // Validate username length
     if (_usernameController.text.length < 3) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -159,6 +158,15 @@ class RegisterScreenState extends State<RegisterScreen> {
           content: Text(
             'El nombre de usuario debe tener al menos 3 caracteres',
           ),
+        ),
+      );
+      return;
+    }
+
+    if (_passwordController.text.length < 6) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('La contraseña debe tener al menos 6 caracteres'),
         ),
       );
       return;
@@ -189,35 +197,31 @@ class RegisterScreenState extends State<RegisterScreen> {
         setState(() {
           _isLoading = false;
         });
+      }
+      if (success) {
+        // Connect to WebSocket
+        final messageService = Provider.of<MessageService>(
+          context,
+          listen: false,
+        );
+        messageService.connectToWebSocket();
 
-        if (success) {
-          // Connect to WebSocket
-          final messageService = Provider.of<MessageService>(
-            context,
-            listen: false,
-          );
-          messageService.connectToWebSocket();
-
-          Navigator.pushReplacement(
-            context,
-            MaterialPageRoute(builder: (context) => HomeScreen()),
-          );
-        }
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (context) => HomeScreen()),
+        );
       }
     } catch (e) {
+      print("ERROR MESSAGE");
+      print(e.toString());
       if (mounted) {
         setState(() {
           _isLoading = false;
         });
 
         // Display specific error messages based on the error
-        String errorMessage =
-            'El registro falló. Por favor, inténtalo de nuevo.';
-        if (e.toString().contains(
-          'Password must be at least 6 characters long',
-        )) {
-          errorMessage = 'La contraseña debe tener al menos 6 caracteres.';
-        } else if (e.toString().contains('Username already taken')) {
+        String errorMessage = e.toString();
+        if (e.toString().contains('Username already taken')) {
           errorMessage = 'El nombre de usuario ya está en uso.';
         } else if (e.toString().contains('Email already registered')) {
           errorMessage = 'El correo electrónico ya está en uso.';
