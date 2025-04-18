@@ -1,4 +1,3 @@
-// lib/screens/register_screen.dart
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../components/custom_button.dart';
@@ -38,6 +37,7 @@ class RegisterScreenState extends State<RegisterScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: Colors.white,
       appBar: AppBar(
         title: Text(
           'Crear cuenta',
@@ -49,89 +49,78 @@ class RegisterScreenState extends State<RegisterScreen> {
       ),
       body: SafeArea(
         child: SingleChildScrollView(
-          child: ConstrainedBox(
-            constraints: BoxConstraints(
-              minHeight:
-                  MediaQuery.of(context).size.height -
-                  MediaQuery.of(context).padding.top -
-                  MediaQuery.of(context).padding.bottom,
-            ),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 30.0),
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  // Top section
-                  Column(
-                    children: [
-                      const SizedBox(height: 40),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 30.0),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                // Top section
+                Column(
+                  children: [
+                    const SizedBox(height: 40),
 
-                      // Username (new field)
-                      CustomTextField(
-                        label: 'Nombre de usuario',
-                        controller: _usernameController,
-                        keyboardType: TextInputType.text,
-                      ),
+                    // Username (new field)
+                    CustomTextField(
+                      label: 'Nombre de usuario',
+                      controller: _usernameController,
+                      keyboardType: TextInputType.text,
+                    ),
 
-                      const SizedBox(height: 16),
+                    const SizedBox(height: 16),
 
-                      // Display name
-                      CustomTextField(
-                        label: 'Nombre a mostrar',
-                        controller: _displayNameController,
-                      ),
+                    // Display name
+                    CustomTextField(
+                      label: 'Nombre a mostrar',
+                      controller: _displayNameController,
+                    ),
 
-                      const SizedBox(height: 16),
+                    const SizedBox(height: 16),
 
-                      // Email field
-                      CustomTextField(
-                        label: 'Email',
-                        controller: _emailController,
-                        keyboardType: TextInputType.emailAddress,
-                      ),
+                    // Email field
+                    CustomTextField(
+                      label: 'Email',
+                      controller: _emailController,
+                      keyboardType: TextInputType.emailAddress,
+                    ),
 
-                      const SizedBox(height: 16),
+                    const SizedBox(height: 16),
 
-                      // Password field
-                      CustomTextField(
-                        label: 'Contraseña',
-                        controller: _passwordController,
-                        obscureText: _obscurePassword,
-                        onToggleVisibility: () {
-                          setState(() {
-                            _obscurePassword = !_obscurePassword;
-                          });
-                        },
-                      ),
+                    // Password field
+                    CustomTextField(
+                      label: 'Contraseña',
+                      controller: _passwordController,
+                      obscureText: _obscurePassword,
+                      onToggleVisibility: () {
+                        setState(() {
+                          _obscurePassword = !_obscurePassword;
+                        });
+                      },
+                    ),
 
-                      const SizedBox(height: 16),
+                    const SizedBox(height: 16),
 
-                      // Repeat Password field
-                      CustomTextField(
-                        label: 'Repetir Contraseña',
-                        controller: _repeatPasswordController,
-                        obscureText: _obscurePassword,
-                        onToggleVisibility: () {
-                          setState(() {
-                            _obscurePassword = !_obscurePassword;
-                          });
-                        },
-                      ),
+                    // Repeat Password field
+                    CustomTextField(
+                      label: 'Repetir Contraseña',
+                      controller: _repeatPasswordController,
+                      obscureText: _obscurePassword,
+                      onToggleVisibility: () {
+                        setState(() {
+                          _obscurePassword = !_obscurePassword;
+                        });
+                      },
+                    ),
 
-                      const SizedBox(height: 32),
+                    const SizedBox(height: 32),
+                  ],
+                ),
 
-                      // Register button
-                      _isLoading
-                          ? CircularProgressIndicator(color: AppColors.primary)
-                          : CustomButton(
-                            text: 'Registrarse',
-                            onPressed: _register,
-                          ),
-                      const SizedBox(height: 24),
-                    ],
-                  ),
-                ],
-              ),
+                // Register button
+                _isLoading
+                    ? CircularProgressIndicator(color: AppColors.primary)
+                    : CustomButton(text: 'Registrarse', onPressed: _register),
+                const SizedBox(height: 24),
+              ],
             ),
           ),
         ),
@@ -140,7 +129,6 @@ class RegisterScreenState extends State<RegisterScreen> {
   }
 
   Future<void> _register() async {
-    // Check if any field is empty
     if (_usernameController.text.isEmpty ||
         _displayNameController.text.isEmpty ||
         _emailController.text.isEmpty ||
@@ -151,28 +139,7 @@ class RegisterScreenState extends State<RegisterScreen> {
       );
       return;
     }
-    // Validate username length
-    if (_usernameController.text.length < 3) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            'El nombre de usuario debe tener al menos 3 caracteres',
-          ),
-        ),
-      );
-      return;
-    }
 
-    if (_passwordController.text.length < 6) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('La contraseña debe tener al menos 6 caracteres'),
-        ),
-      );
-      return;
-    }
-
-    // Check if passwords match
     if (_passwordController.text != _repeatPasswordController.text) {
       ScaffoldMessenger.of(
         context,
@@ -180,59 +147,63 @@ class RegisterScreenState extends State<RegisterScreen> {
       return;
     }
 
+    final authService = Provider.of<AuthService>(context, listen: false);
+    final username = _usernameController.text.trim();
+    final email = _emailController.text.trim();
+    final password = _passwordController.text;
+    final displayName = _displayNameController.text.trim();
+
     setState(() {
       _isLoading = true;
     });
 
     try {
-      final authService = Provider.of<AuthService>(context, listen: false);
-      bool success = await authService.signUp(
-        _usernameController.text.trim(),
-        _emailController.text.trim(),
-        _passwordController.text,
-        _displayNameController.text.trim(),
+      await authService.signUp(username, email, password, displayName);
+
+      // Check if still mounted after async operation
+      if (!mounted) return;
+
+      setState(() {
+        _isLoading = false;
+      });
+
+      // If we get here without an exception, registration was successful
+      // Get message service after ensuring widget is still mounted
+      final messageService = Provider.of<MessageService>(
+        context,
+        listen: false,
       );
+      messageService.connectToWebSocket();
 
-      if (mounted) {
-        setState(() {
-          _isLoading = false;
-        });
-      }
-      if (success) {
-        // Connect to WebSocket
-        final messageService = Provider.of<MessageService>(
-          context,
-          listen: false,
-        );
-        messageService.connectToWebSocket();
-
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(builder: (context) => HomeScreen()),
-        );
-      }
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (context) => HomeScreen()),
+      );
     } catch (e) {
-      print("ERROR MESSAGE");
-      print(e.toString());
-      if (mounted) {
-        setState(() {
-          _isLoading = false;
-        });
+      if (!mounted) return;
 
-        // Display specific error messages based on the error
-        String errorMessage = e.toString();
-        if (e.toString().contains('Username already taken')) {
-          errorMessage = 'El nombre de usuario ya está en uso.';
-        } else if (e.toString().contains('Email already registered')) {
-          errorMessage = 'El correo electrónico ya está en uso.';
-        } else if (e.toString().contains('invalid-email')) {
-          errorMessage = 'El correo electrónico no es válido.';
-        }
+      setState(() {
+        _isLoading = false;
+      });
 
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text(errorMessage)));
+      // Display specific error messages based on the error
+      String errorMessage = 'Error: ${e.toString()}';
+      if (e.toString().contains('Username already taken')) {
+        errorMessage = 'El nombre de usuario ya está en uso. Por favor, elige otro.';
+      } else if (e.toString().contains('Email already registered')) {
+        errorMessage = 'El correo electrónico ya está en uso.';
+      } else if (e.toString().contains(
+        'Password does not meet strength requirements',
+      )) {
+        errorMessage =
+            'La contraseña no cumple con los requisitos de seguridad.';
+      } else if (e.toString().contains('invalid-email')) {
+        errorMessage = 'El correo electrónico no es válido.';
       }
+
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(errorMessage)));
     }
   }
 }

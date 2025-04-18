@@ -6,15 +6,16 @@ import '../services/auth_service.dart';
 import '../services/message_service.dart';
 import 'home_screen.dart';
 import 'login_screen.dart';
+import '../utils/logger.dart';
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
 
   @override
-  _SplashScreenState createState() => _SplashScreenState();
+  SplashScreenState createState() => SplashScreenState();
 }
 
-class _SplashScreenState extends State<SplashScreen> {
+class SplashScreenState extends State<SplashScreen> {
   bool _isLoading = true;
   String? _errorMessage;
 
@@ -32,10 +33,7 @@ class _SplashScreenState extends State<SplashScreen> {
       if (!mounted) return;
 
       final authService = Provider.of<AuthService>(context, listen: false);
-      final messageService = Provider.of<MessageService>(
-        context,
-        listen: false,
-      );
+      final messageService = Provider.of<MessageService>(context, listen: false);
 
       // If authenticated, ensure connection to WebSocket before navigating
       if (authService.isAuthenticated) {
@@ -51,25 +49,30 @@ class _SplashScreenState extends State<SplashScreen> {
           // Load any pending messages
           await messageService.getPendingMessages();
         } catch (e) {
-          print('Error connecting to WebSocket or fetching messages: $e');
+          // Use Logger directly without an instance variable
+          Logger().e('Error connecting to WebSocket or fetching messages', error: e, tag: 'SplashScreen');
           // Continue to the home screen even if WebSocket fails
           // The app should handle reconnection later
         }
       }
 
+      if (!mounted) return;
+
       setState(() {
         _isLoading = false;
       });
 
+      if (!mounted) return;
+
       Navigator.pushReplacement(
         context,
         MaterialPageRoute(
-          builder:
-              (context) =>
-                  authService.isAuthenticated ? HomeScreen() : LoginScreen(),
+          builder: (context) => authService.isAuthenticated ? HomeScreen() : LoginScreen(),
         ),
       );
     } catch (e) {
+      if (!mounted) return;
+
       setState(() {
         _isLoading = false;
         _errorMessage = "Error initializing app: $e";
@@ -77,18 +80,20 @@ class _SplashScreenState extends State<SplashScreen> {
 
       // After a delay, go to login screen anyway
       await Future.delayed(Duration(seconds: 3));
-      if (mounted) {
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(builder: (context) => LoginScreen()),
-        );
-      }
+      
+      if (!mounted) return;
+      
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (context) => LoginScreen()),
+      );
     }
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: Colors.white,
       body: Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,

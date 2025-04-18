@@ -99,42 +99,45 @@ class LoginScreenState extends State<LoginScreen> {
                         isLoading: _isLoading,
                       ),
                       const SizedBox(height: 24),
-                    ],
-                  ),
 
-                  // Registration prompt at bottom
-                  Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 30),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        const Text(
-                          '¿Aún no tienes cuenta?',
-                          style: TextStyle(
-                            color: AppColors.secondary,
-                            fontSize: 13,
-                          ),
-                        ),
-                        GestureDetector(
-                          onTap: () {
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (context) => const RegisterScreen(),
+                      // Add more space here
+                      const SizedBox(height: 40),
+
+                      // Registration prompt at bottom
+                      Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 16),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            const Text(
+                              '¿Aún no tienes cuenta?',
+                              style: TextStyle(
+                                color: AppColors.secondary,
+                                fontSize: 13,
                               ),
-                            );
-                          },
-                          child: const Text(
-                            ' Regístrate',
-                            style: TextStyle(
-                              color: AppColors.primary,
-                              fontWeight: FontWeight.bold,
-                              fontSize: 13,
                             ),
-                          ),
+                            GestureDetector(
+                              onTap: () {
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (context) => const RegisterScreen(),
+                                  ),
+                                );
+                              },
+                              child: const Text(
+                                ' Regístrate',
+                                style: TextStyle(
+                                  color: AppColors.primary,
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 13,
+                                ),
+                              ),
+                            ),
+                          ],
                         ),
-                      ],
-                    ),
+                      ),
+                    ],
                   ),
                 ],
               ),
@@ -147,9 +150,9 @@ class LoginScreenState extends State<LoginScreen> {
 
   Future<void> _login() async {
     if (_emailController.text.isEmpty || _passwordController.text.isEmpty) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('Rellene los campos.')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Por favor, introduce email y contraseña')),
+      );
       return;
     }
 
@@ -159,52 +162,43 @@ class LoginScreenState extends State<LoginScreen> {
 
     try {
       final authService = Provider.of<AuthService>(context, listen: false);
-      bool success = await authService.signIn(
-        _emailController.text.trim(),
-        _passwordController.text,
+      final email = _emailController.text.trim();
+      final password = _passwordController.text;
+      
+      await authService.signIn(email, password);
+
+      if (!mounted) return;
+      
+      setState(() {
+        _isLoading = false;
+      });
+
+      // Connect to WebSocket
+      final messageService = Provider.of<MessageService>(
+        context,
+        listen: false,
       );
+      messageService.connectToWebSocket();
 
-      if (mounted) {
-        setState(() {
-          _isLoading = false;
-        });
-
-        if (success) {
-          // Connect to WebSocket
-          final messageService = Provider.of<MessageService>(
-            context,
-            listen: false,
-          );
-          messageService.connectToWebSocket();
-
-          // Load any pending messages
-          await messageService.getPendingMessages();
-
-          Navigator.pushReplacement(
-            context,
-            MaterialPageRoute(builder: (context) => const HomeScreen()),
-          );
-        } else {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Correo electrónico o contraseña incorrectos.'),
-              backgroundColor: AppColors.error,
-            ),
-          );
-        }
-      }
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (context) => HomeScreen()),
+      );
     } catch (e) {
-      if (mounted) {
-        setState(() {
-          _isLoading = false;
-        });
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error: ${e.toString()}'),
-            backgroundColor: Colors.red,
-          ),
-        );
+      if (!mounted) return;
+      
+      setState(() {
+        _isLoading = false;
+      });
+
+      String errorMessage = e.toString();
+      if (e.toString().contains('Credenciales inválidas')) {
+        errorMessage = 'Email o contraseña incorrectos';
       }
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(errorMessage)),
+      );
     }
   }
 }

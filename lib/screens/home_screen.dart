@@ -6,11 +6,15 @@ import '../services/auth_service.dart';
 import '../services/message_service.dart';
 import '../services/user_service.dart';
 import '../models/user_model.dart';
+import '../models/message_model.dart';
+import '../models/conversation_model.dart';
+import '../components/user_avatar.dart';
 import 'chat_screen.dart';
 import 'login_screen.dart';
 import 'friend_requests_screen.dart';
 import 'search_users_screen.dart';
 import 'user_profile_screen.dart';
+import 'message_search_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -27,7 +31,10 @@ class HomeScreenState extends State<HomeScreen>
   late MessageService _messageService;
   List<UserModel> _friends = [];
   bool _isLoadingFriends = true;
-
+  
+  // Search functionality
+  final TextEditingController _searchController = TextEditingController();
+  
   @override
   void initState() {
     super.initState();
@@ -45,11 +52,19 @@ class HomeScreenState extends State<HomeScreen>
         setState(() {});
       }
     });
+    
+    // Listen for typing indicators
+    _messageService.typingStream.listen((data) {
+      if (mounted) {
+        setState(() {});
+      }
+    });
   }
 
   @override
   void dispose() {
     _tabController.dispose();
+    _searchController.dispose();
     super.dispose();
   }
 
@@ -75,7 +90,9 @@ class HomeScreenState extends State<HomeScreen>
     // Store mounted state before async operation
     final isWidgetMounted = mounted;
 
-    await _authService.signOut();
+    // No need to explicitly clear conversations here anymore
+    // as it will be handled within the authService.signOut() method
+    await _authService.signOut(context);
 
     // Check if widget is still mounted after async operation
     if (isWidgetMounted && mounted) {
@@ -86,6 +103,13 @@ class HomeScreenState extends State<HomeScreen>
       );
     }
   }
+  
+  void _openMessageSearch() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (context) => MessageSearchScreen()),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -94,22 +118,46 @@ class HomeScreenState extends State<HomeScreen>
     }
 
     return Scaffold(
-      appBar: AppBar(
-        title: Text('Chimeo'),
-        actions: [
-          // Friend requests button
-          IconButton(
-            icon: Icon(Icons.person_add),
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (context) => FriendRequestsScreen()),
-              ).then((_) => _loadFriends());
-            },
+      backgroundColor: Colors.white,
+      appBar: _buildAppBar(),
+      drawer: _buildNavigationDrawer(),
+      body: Column(
+        children: [
+          Theme(
+            data: Theme.of(context).copyWith(splashColor: Color(0xFFFFD700)), // Yellow color
+            child: TabBar(
+              controller: _tabController,
+              tabs: [
+                Tab(text: 'Chats'),
+                Tab(text: 'Amigos'),
+              ],
+              labelColor: Colors.black,
+              indicatorColor: AppColors.primary,
+              indicatorSize: TabBarIndicatorSize.tab,
+            ),
           ),
-          // Search users button
-          IconButton(
-            icon: Icon(Icons.search),
+          Expanded(
+            child: TabBarView(
+              controller: _tabController,
+              children: [_buildConversationsList(), _buildFriendsList()],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+  
+  PreferredSizeWidget _buildAppBar() {
+    return AppBar(
+      backgroundColor: Colors.white,
+      elevation: 0,
+      title: Text('Chimeo', style: TextStyle(color: Colors.black)),
+      actions: [
+        Padding(
+          padding: const EdgeInsets.only(right: 8.0),
+          child: IconButton(
+            icon: Icon(Icons.person_search),
+            tooltip: 'Buscar personas',
             onPressed: () {
               Navigator.push(
                 context,
@@ -117,17 +165,8 @@ class HomeScreenState extends State<HomeScreen>
               ).then((_) => _loadFriends());
             },
           ),
-        ],
-        bottom: TabBar(
-          controller: _tabController,
-          tabs: [Tab(text: 'Chats'), Tab(text: 'Amigos')],
         ),
-      ),
-      drawer: _buildNavigationDrawer(),
-      body: TabBarView(
-        controller: _tabController,
-        children: [_buildConversationsList(), _buildFriendsList()],
-      ),
+      ],
     );
   }
 
@@ -162,69 +201,162 @@ class HomeScreenState extends State<HomeScreen>
           final bTime = b.value.lastMessage?.timestamp ?? DateTime(2000);
           return bTime.compareTo(aTime);
         });
+        
+    final filteredConversations = sortedConversations;
 
-    return ListView.builder(
-      itemCount: sortedConversations.length,
-      itemBuilder: (context, index) {
-        final conversation = sortedConversations[index].value;
-        final friendId = sortedConversations[index].key;
-        final lastMessage = conversation.lastMessage;
-
-        return ListTile(
-          leading: CircleAvatar(
-            backgroundColor: Theme.of(context).primaryColor,
-            child: Text(conversation.friendName[0].toUpperCase()),
+    return filteredConversations.isEmpty 
+      ? Center(
+          child: Text(
+            'No se encontraron conversaciones que coincidan',
+            style: TextStyle(color: Colors.grey),
           ),
-          title: Text(conversation.friendName),
-          subtitle:
-              lastMessage != null
-                  ? Text(
+        )
+      : ListView.builder(
+        itemCount: filteredConversations.length,
+        itemBuilder: (context, index) {
+          final conversation = filteredConversations[index].value;
+          final friendId = filteredConversations[index].key;
+          final lastMessage = conversation.lastMessage;
+          
+          // Find the corresponding friend
+          final friend = _friends.firstWhere(
+            (f) => f.username == friendId,
+            orElse: () => UserModel(
+              username: friendId,
+              displayName: conversation.friendName,
+              lastSeen: DateTime.now(),
+            ),
+          );
+
+          return _buildConversationTile(conversation, friendId, lastMessage, friend);
+        },
+      );
+  }
+  
+  Widget _buildConversationTile(
+    ConversationModel conversation, 
+    String friendId, 
+    MessageModel? lastMessage,
+    UserModel friend
+  ) {
+    return ListTile(
+      leading: UserAvatar(
+        displayName: conversation.friendName,
+        avatarUrl: conversation.friendAvatarUrl,
+        status: friend.status,
+        size: 50,
+      ),
+      title: Row(
+        children: [
+          Expanded(
+            child: Text(
+              conversation.friendName,
+              style: TextStyle(
+                fontWeight: FontWeight.bold,
+              ),
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+          if (lastMessage != null)
+            Text(
+              _formatTimestamp(lastMessage.timestamp),
+              style: TextStyle(fontSize: 12, color: Colors.grey),
+            ),
+        ],
+      ),
+      subtitle: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (conversation.isTyping)
+            Row(
+              children: [
+                Text(
+                  'Escribiendo',
+                  style: TextStyle(
+                    fontStyle: FontStyle.italic,
+                    color: AppColors.primary,
+                  ),
+                ),
+                SizedBox(width: 4),
+                _buildTypingIndicator(),
+              ],
+            )
+          else if (lastMessage != null)
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
                     lastMessage.text,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                  )
-                  : Text('No hay mensajes'),
-          trailing: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              if (lastMessage != null)
-                Text(
-                  _formatTimestamp(lastMessage.timestamp),
-                  style: TextStyle(fontSize: 12, color: Colors.grey),
-                ),
-              SizedBox(height: 4),
-              if (lastMessage != null &&
-                  lastMessage.senderId == _authService.user!.username)
-                Icon(
-                  lastMessage.delivered ? Icons.done_all : Icons.done,
-                  size: 16,
-                  color: lastMessage.delivered ? Colors.blue : Colors.grey,
-                ),
-            ],
-          ),
-          onTap: () {
-            // Find the friend from our list
-            final friend = _friends.firstWhere(
-              (f) => f.username == friendId,
-              orElse:
-                  () => UserModel(
-                    username: '',
-                    displayName: conversation.friendName,
-                    lastSeen: DateTime.now(),
+                    style: TextStyle(
+                      color: lastMessage.error
+                          ? Colors.red
+                          : Colors.grey[600],
+                    ),
                   ),
-            );
+                ),
+                SizedBox(width: 4),
+                if (lastMessage.senderId == _authService.user!.username)
+                  Icon(
+                    lastMessage.error
+                        ? Icons.error_outline
+                        : lastMessage.delivered
+                            ? Icons.done_all
+                            : Icons.done,
+                    size: 16,
+                    color: lastMessage.error
+                        ? Colors.red
+                        : lastMessage.read
+                            ? Colors.green
+                            : Colors.grey,
+                  ),
+              ],
+            )
+          else
+            Text('No hay mensajes'),
+        ],
+      ),
+      onTap: () {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => ChatScreen(friend: friend),
+          ),
+        ).then((_) => setState(() {}));
+      },
+    );
+  }
 
-            Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (context) => ChatScreen(friend: friend),
-              ),
-            ).then((_) => setState(() {}));
-          },
-          onLongPress: () {
-            _showDeleteConversationDialog(friendId, conversation.friendName);
-          },
+  Widget _buildTypingIndicator() {
+    return SizedBox(
+      width: 20,
+      height: 20,
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+        children: List.generate(
+          3,
+          (index) => _buildDot(index),
+        ),
+      ),
+    );
+  }
+  
+  Widget _buildDot(int index) {
+    return TweenAnimationBuilder(
+      tween: Tween<double>(begin: 0, end: 1),
+      duration: Duration(milliseconds: 300),
+      curve: Interval(index * 0.2, 0.7 + index * 0.1, curve: Curves.easeInOut),
+      builder: (context, double value, child) {
+        // Convert value (0.0-1.0) to alpha (0-255)
+        final int alpha = (value * 255).round();
+        return Container(
+          width: 4,
+          height: 4,
+          decoration: BoxDecoration(
+            color: AppColors.primary.withAlpha(alpha),
+            shape: BoxShape.circle,
+          ),
         );
       },
     );
@@ -240,125 +372,91 @@ class HomeScreenState extends State<HomeScreen>
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(Icons.person_outline, size: 64, color: Colors.grey),
+            Icon(Icons.people_outline, size: 64, color: Colors.grey),
             SizedBox(height: 16),
             Text(
-              'No tienes amigos aún',
+              'No tienes amigos añadidos',
               style: TextStyle(fontSize: 16, color: Colors.grey),
             ),
             SizedBox(height: 8),
             Text(
-              'Busca usuarios para enviar solicitudes de amistad',
+              'Busca usuarios para añadirlos como amigos',
               style: TextStyle(fontSize: 14, color: Colors.grey),
-            ),
-            SizedBox(height: 24),
-            ElevatedButton.icon(
-              icon: Icon(Icons.search),
-              label: Text('Buscar usuarios'),
-              onPressed: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (context) => SearchUsersScreen()),
-                ).then((_) => _loadFriends());
-              },
             ),
           ],
         ),
       );
     }
-
-    return RefreshIndicator(
-      onRefresh: _loadFriends,
-      child: ListView.builder(
-        itemCount: _friends.length,
-        itemBuilder: (context, index) {
-          final friend = _friends[index];
-          return ListTile(
-            leading: CircleAvatar(
-              backgroundColor: Theme.of(context).primaryColor,
-              child: Text(friend.displayName[0].toUpperCase()),
+    
+    return _friends.isEmpty
+        ? Center(
+            child: Text(
+              'No se encontraron amigos que coincidan',
+              style: TextStyle(color: Colors.grey),
             ),
-            title: Text(friend.displayName),
-            subtitle: Text('@${friend.username}'),
-            trailing: Text(
-              'Última conexión: ${_formatTimestamp(friend.lastSeen)}',
-            ),
-            onTap: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => ChatScreen(friend: friend),
+          )
+        : ListView.builder(
+            itemCount: _friends.length,
+            itemBuilder: (context, index) {
+              final friend = _friends[index];
+              
+              return ListTile(
+                leading: UserAvatar(
+                  displayName: friend.displayName,
+                  avatarUrl: friend.avatarUrl,
+                  status: friend.status,
+                  size: 50,
                 ),
-              ).then((_) => setState(() {}));
+                title: Text(friend.displayName),
+                subtitle: Text('@${friend.username}'),
+                trailing: friend.statusMessage != null 
+                    ? SizedBox(
+                        width: 100,
+                        child: Text(
+                          friend.statusMessage!,
+                          style: TextStyle(
+                            fontStyle: FontStyle.italic,
+                            color: Colors.grey[600],
+                          ),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      )
+                    : null,
+                onTap: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => ChatScreen(friend: friend),
+                    ),
+                  ).then((_) => setState(() {}));
+                },
+              );
             },
           );
-        },
-      ),
-    );
-  }
-
-  void _showDeleteConversationDialog(String friendId, String friendName) {
-    showDialog(
-      context: context,
-      builder:
-          (context) => AlertDialog(
-            title: Text('Eliminar conversación'),
-            content: Text(
-              '¿Estás seguro de que quieres eliminar tu conversación con $friendName? Se borrarán todos los mensajes.',
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(context),
-                child: Text('Cancelar'),
-              ),
-              TextButton(
-                onPressed: () {
-                  _messageService.deleteConversation(friendId);
-                  Navigator.pop(context);
-                  setState(() {});
-                },
-                child: Text('Eliminar', style: TextStyle(color: Colors.red)),
-              ),
-            ],
-          ),
-    );
-  }
-
-  String _formatTimestamp(DateTime timestamp) {
-    final now = DateTime.now();
-    final today = DateTime(now.year, now.month, now.day);
-    final yesterday = DateTime(now.year, now.month, now.day - 1);
-    final dateToCheck = DateTime(
-      timestamp.year,
-      timestamp.month,
-      timestamp.day,
-    );
-
-    if (dateToCheck == today) {
-      return '${timestamp.hour}:${timestamp.minute.toString().padLeft(2, '0')}';
-    } else if (dateToCheck == yesterday) {
-      return 'Ayer';
-    } else {
-      return '${timestamp.day}/${timestamp.month}/${timestamp.year}';
-    }
   }
 
   Widget _buildNavigationDrawer() {
     return Drawer(
+      backgroundColor: Colors.white,
       child: ListView(
         padding: EdgeInsets.zero,
         children: [
           UserAccountsDrawerHeader(
-            accountName: Text(_authService.user?.displayName ?? 'Usuario'),
-            accountEmail: Text('@${_authService.user?.username ?? ''}'),
-            currentAccountPicture: CircleAvatar(
-              backgroundColor: Colors.white,
-              child: Text(
-                _authService.user?.displayName[0].toUpperCase() ?? 'U',
-                style: TextStyle(fontSize: 24, color: AppColors.primary),
-              ),
+            accountName: Text(_authService.user!.displayName),
+            accountEmail: Text('@${_authService.user!.username}'),
+            currentAccountPicture: UserAvatar(
+              displayName: _authService.user!.displayName,
+              size: 60,
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (context) => UserProfileScreen()),
+                );
+              },
             ),
-            decoration: BoxDecoration(color: AppColors.primary),
+            decoration: BoxDecoration(
+              color: AppColors.primary,
+            ),
           ),
           ListTile(
             leading: Icon(Icons.person),
@@ -372,17 +470,6 @@ class HomeScreenState extends State<HomeScreen>
             },
           ),
           ListTile(
-            leading: Icon(Icons.person_add),
-            title: Text('Solicitudes de amistad'),
-            onTap: () {
-              Navigator.pop(context); // Close drawer
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (context) => FriendRequestsScreen()),
-              ).then((_) => _loadFriends());
-            },
-          ),
-          ListTile(
             leading: Icon(Icons.search),
             title: Text('Buscar usuarios'),
             onTap: () {
@@ -393,17 +480,40 @@ class HomeScreenState extends State<HomeScreen>
               ).then((_) => _loadFriends());
             },
           ),
-          Divider(),
           ListTile(
-            leading: Icon(Icons.exit_to_app, color: Colors.red),
-            title: Text('Cerrar sesión', style: TextStyle(color: Colors.red)),
+            leading: Icon(Icons.person_add),
+            title: Text('Solicitudes de amistad'),
             onTap: () {
               Navigator.pop(context); // Close drawer
-              _signOut();
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => FriendRequestsScreen()),
+              ).then((_) => _loadFriends());
             },
+          ),
+          Divider(),
+          ListTile(
+            leading: Icon(Icons.logout),
+            title: Text('Cerrar sesión'),
+            onTap: _signOut,
           ),
         ],
       ),
     );
+  }
+
+  String _formatTimestamp(DateTime timestamp) {
+    final now = DateTime.now();
+    final difference = now.difference(timestamp);
+
+    if (difference.inDays > 0) {
+      return '${difference.inDays}d';
+    } else if (difference.inHours > 0) {
+      return '${difference.inHours}h';
+    } else if (difference.inMinutes > 0) {
+      return '${difference.inMinutes}m';
+    } else {
+      return 'ahora';
+    }
   }
 }

@@ -1,32 +1,41 @@
 // lib/services/auth_service.dart
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
-import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/user_model.dart';
-import '../config/api_config.dart';
+import 'local_storage_service.dart';
+import '../repositories/auth_repository.dart';
+import '../utils/logger.dart';
+import 'package:provider/provider.dart';
+import '../services/message_service.dart';
+import 'package:flutter/material.dart';
 
 class AuthService with ChangeNotifier {
   UserModel? _user;
   String? _token;
+  final LocalStorageService _storageService = LocalStorageService();
+  final AuthRepository _authRepo = AuthRepository();
+  final Logger _logger = Logger();
 
   UserModel? get user => _user;
   String? get token => _token;
   bool get isAuthenticated => _user != null && _token != null;
 
   AuthService() {
-    _loadUserFromStorage();
+    _loadAuthData();
   }
 
-  Future<void> _loadUserFromStorage() async {
-    final prefs = await SharedPreferences.getInstance();
-    final savedToken = prefs.getString('auth_token');
-    final savedUser = prefs.getString('user_data');
-
-    if (savedToken != null && savedUser != null) {
-      _token = savedToken;
-      _user = UserModel.fromJson(json.decode(savedUser));
-      notifyListeners();
+  Future<void> _loadAuthData() async {
+    try {
+      final authData = await _authRepo.loadAuthData();
+      
+      if (authData != null && authData.isNotEmpty) {
+        _token = authData['token'];
+        _user = authData['user'] as UserModel;
+        notifyListeners();
+      }
+    } catch (e) {
+      _logger.e('Error loading auth data', error: e, tag: 'AuthService');
     }
   }
 
@@ -39,84 +48,83 @@ class AuthService with ChangeNotifier {
     }
   }
 
-  Future<bool> signIn(String email, String password) async {
+  Future<UserModel> signIn(String email, String password) async {
     try {
-      final response = await http.post(
-        Uri.parse('${ApiConfig.baseUrl}/auth/login'),
-        headers: {'Content-Type': 'application/json'},
-        body: json.encode({'email': email, 'password': password}),
-      );
-
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body);
-        _token = data['access_token'];
-
-        _user = UserModel(
-          username: data['username'],
-          displayName: data['display_name'],
-          lastSeen: DateTime.now(),
-        );
-
-        await _saveUserToStorage();
-        notifyListeners();
-        return true;
+      final authData = await _authRepo.signIn(email, password);
+      
+      if (authData == null) {
+        throw Exception('Error en el inicio de sesión: No se recibieron datos');
       }
-
-      return false;
+      
+      _token = authData['access_token'];
+      _user = UserModel(
+        username: authData['username'],
+        displayName: authData['display_name'],
+        lastSeen: DateTime.now(),
+      );
+      
+      await _saveUserToStorage();
+      notifyListeners();
+      return _user!;
     } catch (e) {
-      print('Error signing in: $e');
-      return false;
+      _logger.e('Error signing in', error: e, tag: 'AuthService');
+      rethrow;
     }
   }
 
-  Future<bool> signUp(
+  Future<UserModel> signUp(
     String username,
     String email,
     String password,
     String displayName,
   ) async {
     try {
-      final response = await http.post(
-        Uri.parse('${ApiConfig.baseUrl}/auth/register'),
-        headers: {'Content-Type': 'application/json'},
-        body: json.encode({
-          'username': username,
-          'email': email,
-          'password': password,
-          'display_name': displayName,
-        }),
+      final authData = await _authRepo.signUp(
+        username,
+        email,
+        password,
+        displayName,
       );
-
-      if (response.statusCode == 201) {
-        final data = json.decode(response.body);
-        _token = data['access_token'];
-
-        _user = UserModel(
-          username: data['username'],
-          displayName: data['display_name'],
-          lastSeen: DateTime.now(),
-        );
-
-        await _saveUserToStorage();
-        notifyListeners();
-        return true;
-      } else {
-        final error = json.decode(response.body);
-        throw error['detail'] ?? 'Registration failed';
+      
+      if (authData == null) {
+        throw Exception('Error en el registro: No se recibieron datos');
       }
+      
+      _token = authData['access_token'];
+      _user = UserModel(
+        username: authData['username'],
+        displayName: authData['display_name'],
+        lastSeen: DateTime.now(),
+      );
+      
+      await _saveUserToStorage();
+      notifyListeners();
+      return _user!;
     } catch (e) {
-      throw e.toString();
+      _logger.e('Error signing up', error: e, tag: 'AuthService');
+      rethrow;
     }
   }
 
-  Future<void> signOut() async {
-    _user = null;
-    _token = null;
-
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.remove('auth_token');
-    await prefs.remove('user_data');
-
-    notifyListeners();
+  Future<bool> signOut(BuildContext context) async {
+    try {
+      await _authRepo.clearAuthData();
+      
+      _token = null;
+      _user = null;
+      
+      await _storageService.clearAllConversations();
+      
+      // Disconnect WebSocket and clear message data
+      final messageService = Provider.of<MessageService>(context, listen: false);
+      messageService.disconnectWebSocket();
+      messageService.clearData();
+      
+      notifyListeners();
+      return true;
+    } catch (e) {
+      _logger.e('Error signing out', error: e, tag: 'AuthService');
+      return false;
+    }
   }
 }

@@ -5,9 +5,11 @@ import '../models/user_model.dart';
 import '../models/friend_request_model.dart';
 import '../config/api_config.dart';
 import 'auth_service.dart';
+import '../utils/logger.dart';
 
 class UserService {
   final AuthService _authService;
+  final Logger _logger = Logger();
 
   UserService(this._authService);
 
@@ -17,7 +19,7 @@ class UserService {
       if (query.length < 3) return [];
 
       final response = await http.get(
-        Uri.parse('${ApiConfig.baseUrl}/users/search?q=$query'),
+        Uri.parse('${ApiConfig.baseUrl}${ApiConfig.usersPath}/search?q=$query'),
         headers: {'Authorization': 'Bearer ${_authService.token}'},
       );
 
@@ -28,8 +30,28 @@ class UserService {
 
       return [];
     } catch (e) {
-      print('Error searching users: $e');
+      _logger.e('Error searching users', error: e, tag: 'UserService');
       return [];
+    }
+  }
+
+  // Get user profile by username
+  Future<UserModel?> getUserProfile(String username) async {
+    try {
+      final response = await http.get(
+        Uri.parse('${ApiConfig.baseUrl}${ApiConfig.usersPath}/$username'),
+        headers: {'Authorization': 'Bearer ${_authService.token}'},
+      );
+
+      if (response.statusCode == 200) {
+        final userData = json.decode(response.body);
+        return UserModel.fromJson(userData);
+      }
+
+      return null;
+    } catch (e) {
+      _logger.e('Error getting user profile', error: e, tag: 'UserService');
+      return null;
     }
   }
 
@@ -37,7 +59,7 @@ class UserService {
   Future<List<UserModel>> getFriends() async {
     try {
       final response = await http.get(
-        Uri.parse('${ApiConfig.baseUrl}/users/friends'),
+        Uri.parse('${ApiConfig.baseUrl}${ApiConfig.usersPath}/friends'),
         headers: {'Authorization': 'Bearer ${_authService.token}'},
       );
 
@@ -48,46 +70,60 @@ class UserService {
 
       return [];
     } catch (e) {
-      print('Error getting friends: $e');
+      _logger.e('Error getting friends', error: e, tag: 'UserService');
       return [];
     }
   }
 
-  // Send a friend request
-  Future<String?> sendFriendRequest(String username) async {
+  // Send friend request
+  Future<bool> sendFriendRequest(String username) async {
+    final token = _authService.token;
+    if (token == null) {
+      _logger.w('Attempted to send friend request without auth token', tag: 'UserService');
+      throw Exception('Not authenticated');
+    }
+    
     try {
       final response = await http.post(
-        Uri.parse('${ApiConfig.baseUrl}/users/friends/request'),
+        Uri.parse('${ApiConfig.baseUrl}${ApiConfig.usersPath}/friends/request'),
         headers: {
-          'Authorization': 'Bearer ${_authService.token}',
+          'Authorization': 'Bearer $token',
           'Content-Type': 'application/json',
         },
         body: json.encode({'username': username}),
       );
 
       if (response.statusCode == 200) {
-        final requestStatus = json.decode(response.body);
-        return requestStatus['status'];
-      } else if (response.statusCode == 400) {
-        final errorResponse = json.decode(response.body);
-        return errorResponse['detail'];
+        _logger.i('Friend request sent successfully to $username', tag: 'UserService');
+        return true;
+      } else {
+        String errorMessage = 'Failed to send friend request (Code: ${response.statusCode})';
+        try {
+          final responseBody = json.decode(response.body);
+          if (responseBody is Map && responseBody.containsKey('detail')) {
+            errorMessage = responseBody['detail'];
+          }
+        } catch (e) {
+          _logger.w('Failed to parse error response body: ${response.body}', tag: 'UserService');
+          errorMessage += '\nResponse: ${response.body}';
+        }
+        _logger.e('Error sending friend request to $username: $errorMessage', tag: 'UserService');
+        throw Exception(errorMessage);
       }
-
-      return null;
     } catch (e) {
-      print('Error sending friend request: $e');
-      return null;
+      _logger.e('Error sending friend request to $username', error: e, tag: 'UserService');
+      rethrow;
     }
   }
 
-  // Respond to a friend request (accept or reject)
+  // Respond to friend request
   Future<UserModel?> respondToFriendRequest(
     String requestId,
     String action,
   ) async {
     try {
       final response = await http.post(
-        Uri.parse('${ApiConfig.baseUrl}/users/friends/respond'),
+        Uri.parse('${ApiConfig.baseUrl}${ApiConfig.usersPath}/friends/respond'),
         headers: {
           'Authorization': 'Bearer ${_authService.token}',
           'Content-Type': 'application/json',
@@ -101,20 +137,15 @@ class UserService {
 
       return null;
     } catch (e) {
-      print('Error responding to friend request: $e');
+      _logger.e('Error responding to friend request', error: e, tag: 'UserService');
       return null;
     }
   }
 
   // Get received friend requests
-  Future<List<FriendRequestModel>> getReceivedFriendRequests({
-    String? status,
-  }) async {
+  Future<List<FriendRequestModel>> getReceivedFriendRequests() async {
     try {
-      String url = '${ApiConfig.baseUrl}/users/friends/requests/received';
-      if (status != null) {
-        url += '?status=$status';
-      }
+      String url = '${ApiConfig.baseUrl}${ApiConfig.usersPath}/friends/requests/received';
 
       final response = await http.get(
         Uri.parse(url),
@@ -128,7 +159,7 @@ class UserService {
 
       return [];
     } catch (e) {
-      print('Error getting received friend requests: $e');
+      _logger.e('Error getting received friend requests', error: e, tag: 'UserService');
       return [];
     }
   }
@@ -138,7 +169,7 @@ class UserService {
     String? status,
   }) async {
     try {
-      String url = '${ApiConfig.baseUrl}/users/friends/requests/sent';
+      String url = '${ApiConfig.baseUrl}${ApiConfig.usersPath}/friends/requests/sent';
       if (status != null) {
         url += '?status=$status';
       }
@@ -155,7 +186,7 @@ class UserService {
 
       return [];
     } catch (e) {
-      print('Error getting sent friend requests: $e');
+      _logger.e('Error getting sent friend requests', error: e, tag: 'UserService');
       return [];
     }
   }

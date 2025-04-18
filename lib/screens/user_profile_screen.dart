@@ -10,10 +10,10 @@ class UserProfileScreen extends StatefulWidget {
   const UserProfileScreen({super.key});
 
   @override
-  _UserProfileScreenState createState() => _UserProfileScreenState();
+  UserProfileScreenState createState() => UserProfileScreenState();
 }
 
-class _UserProfileScreenState extends State<UserProfileScreen> {
+class UserProfileScreenState extends State<UserProfileScreen> {
   late AuthService _authService;
   late MessageService _messageService;
   bool _isLoading = false;
@@ -31,21 +31,27 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
     });
 
     try {
-      await _authService.signOut();
+      // No need to explicitly call clearAllConversations here anymore
+      // as it will be handled within the authService.signOut() method
+      await _authService.signOut(context);
 
+      if (!mounted) return;
+      
       Navigator.pushAndRemoveUntil(
         context,
         MaterialPageRoute(builder: (context) => LoginScreen()),
         (route) => false,
       );
     } catch (e) {
+      if (!mounted) return;
+      
       setState(() {
         _isLoading = false;
       });
 
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Error al cerrar sesión: ${e.toString()}'),
+          content: Text('Error: $e'),
           backgroundColor: Colors.red,
         ),
       );
@@ -55,64 +61,63 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
   Future<void> _clearAllConversations() async {
     showDialog(
       context: context,
-      builder:
-          (context) => AlertDialog(
-            title: Text('Borrar todas las conversaciones'),
-            content: Text(
-              '¿Estás seguro de que quieres borrar todas tus conversaciones? Esta acción no se puede deshacer.',
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(context),
-                child: Text('Cancelar'),
-              ),
-              TextButton(
-                onPressed: () async {
-                  Navigator.pop(context);
-
-                  setState(() {
-                    _isLoading = true;
-                  });
-
-                  try {
-                    // Clear conversations one by one
-                    final conversationIds =
-                        _messageService.conversations.keys.toList();
-                    for (final id in conversationIds) {
-                      await _messageService.deleteConversation(id);
-                    }
-
-                    setState(() {
-                      _isLoading = false;
-                    });
-
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: Text(
-                          'Todas las conversaciones han sido eliminadas',
-                        ),
-                        backgroundColor: Colors.green,
-                      ),
-                    );
-                  } catch (e) {
-                    setState(() {
-                      _isLoading = false;
-                    });
-
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: Text(
-                          'Error al eliminar conversaciones: ${e.toString()}',
-                        ),
-                        backgroundColor: Colors.red,
-                      ),
-                    );
-                  }
-                },
-                child: Text('Borrar todo', style: TextStyle(color: Colors.red)),
-              ),
-            ],
+      builder: (BuildContext dialogContext) => AlertDialog(
+        title: Text('Eliminar conversaciones'),
+        content: Text(
+          '¿Estás seguro de que quieres eliminar todas las conversaciones? Esta acción no se puede deshacer.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: Text('Cancelar'),
           ),
+          TextButton(
+            onPressed: () async {
+              Navigator.pop(dialogContext);
+              
+              // Show loading indicator
+              setState(() {
+                _isLoading = true;
+              });
+              
+              try {
+                final success = await _messageService.clearAllLocalConversations();
+                
+                if (!mounted) return;
+                
+                setState(() {
+                  _isLoading = false;
+                });
+                
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text(
+                      success
+                          ? 'Todas las conversaciones fueron eliminadas'
+                          : 'Error al eliminar conversaciones',
+                    ),
+                    backgroundColor: success ? Colors.green : Colors.red,
+                  ),
+                );
+              } catch (e) {
+                if (!mounted) return;
+                
+                setState(() {
+                  _isLoading = false;
+                });
+                
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text('Error: $e'),
+                    backgroundColor: Colors.red,
+                  ),
+                );
+              }
+            },
+            child: Text('Eliminar', style: TextStyle(color: Colors.red)),
+          ),
+        ],
+      ),
     );
   }
 

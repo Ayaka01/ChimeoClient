@@ -3,21 +3,21 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../services/user_service.dart';
 import '../models/user_model.dart';
+import 'package:simple_messenger/constants/colors.dart';
 
 class SearchUsersScreen extends StatefulWidget {
   const SearchUsersScreen({super.key});
 
   @override
-  _SearchUsersScreenState createState() => _SearchUsersScreenState();
+  SearchUsersScreenState createState() => SearchUsersScreenState();
 }
 
-class _SearchUsersScreenState extends State<SearchUsersScreen> {
+class SearchUsersScreenState extends State<SearchUsersScreen> {
   final TextEditingController _searchController = TextEditingController();
   late UserService _userService;
   List<UserModel> _searchResults = [];
   bool _isSearching = false;
-  bool _hasSearched = false;
-  Map<String, bool> _requestInProgress = {};
+  final Map<String, bool> _requestInProgress = {};
 
   @override
   void initState() {
@@ -35,89 +35,81 @@ class _SearchUsersScreenState extends State<SearchUsersScreen> {
     final query = _searchController.text.trim();
 
     if (query.length < 3) {
+      if (!mounted) return;
+      
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Introduce al menos 3 caracteres para buscar')),
+        SnackBar(
+          content: Text('Ingresa al menos 3 caracteres para buscar'),
+        ),
       );
       return;
     }
 
     setState(() {
       _isSearching = true;
-      _hasSearched = true;
     });
 
-    try {
-      final results = await _userService.searchUsers(query);
+    final results = await _userService.searchUsers(query);
 
-      setState(() {
-        _searchResults = results;
-        _isSearching = false;
-      });
-    } catch (e) {
-      setState(() {
-        _isSearching = false;
-      });
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error al buscar usuarios: ${e.toString()}')),
-      );
-    }
+    if (!mounted) return;
+    
+    setState(() {
+      _searchResults = results;
+      _isSearching = false;
+    });
   }
 
   Future<void> _sendFriendRequest(UserModel user) async {
+    if (_requestInProgress[user.username] == true) return;
+
     setState(() {
       _requestInProgress[user.username] = true;
     });
 
     try {
-      final request = await _userService.sendFriendRequest(user.username);
+      await _userService.sendFriendRequest(user.username);
 
+      if (!mounted) return;
+      
       setState(() {
-        _requestInProgress[user.username] = false;
+        _searchResults.removeWhere((searchResult) => searchResult.username == user.username);
       });
 
-      if (request == 'accepted') {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              "Great news! Since both of you sent friend requests to each other, you're now connected as friends!",
-            ),
-            backgroundColor: Colors.green,
-          ),
-        );
-      } else if (request == 'pending') {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Request sent.'),
-            backgroundColor: Colors.green,
-          ),
-        );
-      } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(request ?? "Error sending friend request"),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Solicitud enviada a ${user.displayName}'),
+          backgroundColor: Colors.green,
+        ),
+      );
+
     } catch (e) {
-      setState(() {
-        _requestInProgress[user.username] = false;
-      });
-
+      if (!mounted) return;
+      
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('Error: ${e.toString()}'),
           backgroundColor: Colors.red,
         ),
       );
+
+    } finally {
+      if (mounted) {
+        setState(() {
+          _requestInProgress[user.username] = false;
+        });
+      }
     }
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text('Buscar usuarios')),
+      backgroundColor: Colors.white,
+      appBar: AppBar(
+        title: Text('Buscar usuarios'),
+        backgroundColor: Colors.white,
+        elevation: 0,
+      ),
       body: Column(
         children: [
           Padding(
@@ -134,6 +126,10 @@ class _SearchUsersScreenState extends State<SearchUsersScreen> {
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(8),
                       ),
+                      focusedBorder: OutlineInputBorder(
+                        borderSide: BorderSide(color: AppColors.primary),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
                     ),
                     onSubmitted: (_) => _searchUsers(),
                     textInputAction: TextInputAction.search,
@@ -142,10 +138,10 @@ class _SearchUsersScreenState extends State<SearchUsersScreen> {
                 SizedBox(width: 8),
                 ElevatedButton(
                   onPressed: _searchUsers,
-                  child: Text('Buscar'),
                   style: ElevatedButton.styleFrom(
                     padding: EdgeInsets.symmetric(horizontal: 16, vertical: 16),
                   ),
+                  child: Text('Buscar'),
                 ),
               ],
             ),
@@ -154,9 +150,9 @@ class _SearchUsersScreenState extends State<SearchUsersScreen> {
             child:
                 _isSearching
                     ? Center(child: CircularProgressIndicator())
-                    : _hasSearched
-                    ? _buildSearchResults()
-                    : _buildSearchInstructions(),
+                    : _searchResults.isEmpty
+                    ? _buildSearchInstructions()
+                    : _buildSearchResults(),
           ),
         ],
       ),

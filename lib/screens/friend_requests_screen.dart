@@ -41,13 +41,29 @@ class FriendRequestsScreenState extends State<FriendRequestsScreen>
       _isLoadingReceived = true;
     });
 
-    final requests = await _userService.getReceivedFriendRequests(
-      status: 'pending',
-    );
-    setState(() {
-      _receivedRequests = requests;
-      _isLoadingReceived = false;
-    });
+    try {
+      final requests = await _userService.getReceivedFriendRequests();
+      
+      if (!mounted) return;
+      
+      setState(() {
+        _receivedRequests = requests;
+        _isLoadingReceived = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      
+      setState(() {
+        _isLoadingReceived = false;
+      });
+      
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error al cargar solicitudes: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
   }
 
   Future<void> _loadSentRequests() async {
@@ -55,26 +71,40 @@ class FriendRequestsScreenState extends State<FriendRequestsScreen>
       _isLoadingSent = true;
     });
 
-    final requests = await _userService.getSentFriendRequests();
-
-    setState(() {
-      _sentRequests = requests;
-      _isLoadingSent = false;
-    });
+    try {
+      final requests = await _userService.getSentFriendRequests();
+      
+      if (!mounted) return;
+      
+      setState(() {
+        _sentRequests = requests;
+        _isLoadingSent = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      
+      setState(() {
+        _isLoadingSent = false;
+      });
+      
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error al cargar solicitudes enviadas: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
   }
 
   Future<void> _respondToRequest(String requestId, String action) async {
     try {
-      // Store mounted state before async operation
-      final isWidgetMounted = mounted;
-
       final result = await _userService.respondToFriendRequest(
         requestId,
         action,
       );
 
       // Check if widget is still mounted after async operation
-      if (!isWidgetMounted) return;
+      if (!mounted) return;
 
       if (result != null) {
         // Reload the lists
@@ -87,36 +117,53 @@ class FriendRequestsScreenState extends State<FriendRequestsScreen>
                 ? 'Solicitud aceptada. ¡Ahora son amigos!'
                 : 'Solicitud rechazada.';
 
-        // Check context is still valid before using ScaffoldMessenger
-        if (mounted) {
-          ScaffoldMessenger.of(
-            context,
-          ).showSnackBar(SnackBar(content: Text(message)));
-        }
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(message),
+            backgroundColor: action == 'accept' ? Colors.green : null,
+          ),
+        );
       }
     } catch (e) {
-      // Check if widget is still mounted before showing error
-      if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Error: ${e.toString()}')));
-      }
+      if (!mounted) return;
+      
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error: ${e.toString()}'),
+          backgroundColor: Colors.red,
+        )
+      );
     }
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: Colors.white,
       appBar: AppBar(
+        backgroundColor: Colors.white,
+        elevation: 0,
         title: Text('Solicitudes de amistad'),
-        bottom: TabBar(
-          controller: _tabController,
-          tabs: [Tab(text: 'Recibidas'), Tab(text: 'Enviadas')],
-        ),
       ),
-      body: TabBarView(
-        controller: _tabController,
-        children: [_buildReceivedRequestsList(), _buildSentRequestsList()],
+      body: Column(
+        children: [
+          Theme(
+            data: Theme.of(context).copyWith(splashColor: Color(0xFFFFD700)),
+            child: TabBar(
+              controller: _tabController,
+              tabs: [Tab(text: 'Recibidas'), Tab(text: 'Enviadas')],
+              indicatorSize: TabBarIndicatorSize.tab,
+              indicatorColor: Color(0xFFFFD700),
+              labelColor: Colors.black,
+            ),
+          ),
+          Expanded(
+            child: TabBarView(
+              controller: _tabController,
+              children: [_buildReceivedRequestsList(), _buildSentRequestsList()],
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -156,48 +203,18 @@ class FriendRequestsScreenState extends State<FriendRequestsScreen>
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      CircleAvatar(
-                        backgroundColor: Theme.of(context).primaryColor,
-                        child: Text(
-                          request.sender.displayName[0].toUpperCase(),
+                      Text(
+                        request.senderUsername,
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
                         ),
                       ),
-                      SizedBox(width: 16),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              request.sender.displayName,
-                              style: TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                            Text('@${request.sender.username}'),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                  SizedBox(height: 12),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.end,
-                    children: [
-                      TextButton(
-                        onPressed:
-                            () => _respondToRequest(request.id, 'reject'),
-                        child: Text(
-                          'Rechazar',
-                          style: TextStyle(color: Colors.red),
-                        ),
-                      ),
-                      SizedBox(width: 8),
                       ElevatedButton(
-                        onPressed:
-                            () => _respondToRequest(request.id, 'accept'),
-                        child: Text('Aceptar'),
+                        onPressed: () => _respondToRequest(request.id, 'accept'),
+                        child: Text('Accept'),
                       ),
                     ],
                   ),
@@ -240,10 +257,10 @@ class FriendRequestsScreenState extends State<FriendRequestsScreen>
           return ListTile(
             leading: CircleAvatar(
               backgroundColor: Theme.of(context).primaryColor,
-              child: Text(request.recipient.displayName[0].toUpperCase()),
+              child: Text(request.recipientUsername[0].toUpperCase()),
             ),
-            title: Text(request.recipient.displayName),
-            subtitle: Text('@${request.recipient.username}'),
+            title: Text(request.recipientUsername),
+            subtitle: Text('@${request.recipientUsername}'),
             trailing: _getStatusChip(request.status),
           );
         },
