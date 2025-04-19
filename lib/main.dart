@@ -1,12 +1,13 @@
-// lib/main.dart
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:provider/single_child_widget.dart';
 import 'services/auth_service.dart';
 import 'services/user_service.dart';
 import 'services/message_service.dart';
 import 'services/local_storage_service.dart';
 import 'screens/splash_screen.dart';
 import 'constants/colors.dart';
+import 'config/app_config.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -18,57 +19,63 @@ class MyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    SingleChildWidget localStorageServiceProvider = Provider(create: (context) => LocalStorageService());
+    SingleChildWidget authServiceProvider =  ChangeNotifierProvider(create: (context) => AuthService());
+
+    SingleChildWidget userServiceProvider = ProxyProvider<AuthService, UserService>(
+      update: (context, auth, previous) => UserService(auth),
+    );
+
+    SingleChildWidget messageServiceProvider = ChangeNotifierProxyProvider2<
+        AuthService,
+        LocalStorageService,
+        MessageService
+    >(
+        create:
+            (context) => MessageService(
+          Provider.of<AuthService>(context, listen: false),
+          Provider.of<LocalStorageService>(context, listen: false),
+        ),
+
+        update:
+            (context, auth, storage, previous) =>
+        previous!..updateServices(auth, storage),
+
+    );
+
+
+    List<SingleChildWidget> rootProviders = [
+      localStorageServiceProvider,
+      authServiceProvider,
+      userServiceProvider,
+      messageServiceProvider
+    ];
+
+    ThemeData baseTheme = ThemeData(
+      visualDensity: VisualDensity.adaptivePlatformDensity,
+
+      appBarTheme: AppBarTheme(
+        backgroundColor: AppColors.bg,
+        foregroundColor: AppColors.secondary,
+        centerTitle: true,
+      ),
+
+      elevatedButtonTheme: ElevatedButtonThemeData(
+        style: ElevatedButton.styleFrom(
+          backgroundColor: AppColors.primary,
+          foregroundColor: AppColors.secondary,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(8),
+          ),
+        ),
+
+      ),);
+
     return MultiProvider(
-      providers: [
-        // Local storage service is a singleton
-        Provider(create: (context) => LocalStorageService()),
-
-        // Auth service
-        ChangeNotifierProvider(create: (context) => AuthService()),
-
-        // User service depends on auth service
-        ProxyProvider<AuthService, UserService>(
-          update: (context, auth, previous) => UserService(auth),
-        ),
-
-        // Message service depends on auth service and local storage
-        // Using ChangeNotifierProxyProvider2 instead of ProxyProvider2
-        ChangeNotifierProxyProvider2<
-          AuthService,
-          LocalStorageService,
-          MessageService
-        >(
-          create:
-              (context) => MessageService(
-                Provider.of<AuthService>(context, listen: false),
-                Provider.of<LocalStorageService>(context, listen: false),
-              ),
-          update:
-              (context, auth, storage, previous) =>
-                  previous!..updateServices(auth, storage),
-        ),
-      ],
+      providers: rootProviders,
       child: MaterialApp(
-        title: 'Chimeo',
-        theme: ThemeData(
-          primarySwatch: Colors.amber,
-          visualDensity: VisualDensity.adaptivePlatformDensity,
-          appBarTheme: AppBarTheme(
-            backgroundColor: Colors.white,
-            foregroundColor: AppColors.secondary,
-            elevation: 1,
-            centerTitle: true,
-          ),
-          elevatedButtonTheme: ElevatedButtonThemeData(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppColors.primary,
-              foregroundColor: AppColors.secondary,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(8),
-              ),
-            ),
-          ),
-        ),
+        title: AppConfig.appName,
+        theme: baseTheme,
         home: SplashScreen(),
         debugShowCheckedModeBanner: false,
       ),

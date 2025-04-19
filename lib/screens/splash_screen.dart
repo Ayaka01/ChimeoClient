@@ -1,4 +1,3 @@
-// lib/screens/splash_screen.dart
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../constants/colors.dart';
@@ -6,16 +5,15 @@ import '../services/auth_service.dart';
 import '../services/message_service.dart';
 import 'home_screen.dart';
 import 'login_screen.dart';
-import '../utils/logger.dart';
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
 
   @override
-  SplashScreenState createState() => SplashScreenState();
+  State<SplashScreen> createState() => _SplashScreenState();
 }
 
-class SplashScreenState extends State<SplashScreen> {
+class _SplashScreenState extends State<SplashScreen> {
   bool _isLoading = true;
   String? _errorMessage;
 
@@ -25,69 +23,40 @@ class SplashScreenState extends State<SplashScreen> {
     _checkAuthStatus();
   }
 
-  Future<void> _checkAuthStatus() async {
-    try {
-      // Give it some time to show the splash screen
-      await Future.delayed(Duration(seconds: 2));
-
-      if (!mounted) return;
-
-      final authService = Provider.of<AuthService>(context, listen: false);
-      final messageService = Provider.of<MessageService>(context, listen: false);
-
-      // If authenticated, ensure connection to WebSocket before navigating
-      if (authService.isAuthenticated) {
-        try {
-          // Connect to WebSocket if not already connected
-          if (!messageService.isConnected) {
-            messageService.connectToWebSocket();
-          }
-
-          // Set a timeout for the WebSocket connection
-          await Future.delayed(Duration(seconds: 5));
-
-          // Load any pending messages
-          await messageService.getPendingMessages();
-        } catch (e) {
-          // Use Logger directly without an instance variable
-          Logger().e('Error connecting to WebSocket or fetching messages', error: e, tag: 'SplashScreen');
-          // Continue to the home screen even if WebSocket fails
-          // The app should handle reconnection later
-        }
-      }
-
-      if (!mounted) return;
-
-      setState(() {
-        _isLoading = false;
-      });
-
-      if (!mounted) return;
-
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(
-          builder: (context) => authService.isAuthenticated ? HomeScreen() : LoginScreen(),
-        ),
-      );
-    } catch (e) {
-      if (!mounted) return;
-
-      setState(() {
-        _isLoading = false;
-        _errorMessage = "Error initializing app: $e";
-      });
-
-      // After a delay, go to login screen anyway
-      await Future.delayed(Duration(seconds: 3));
-      
-      if (!mounted) return;
-      
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(builder: (context) => LoginScreen()),
-      );
+  @override
+  void setState(VoidCallback fn) {
+    if (mounted) {
+      super.setState(fn);
     }
+  }
+
+  Future<void> _checkAuthStatus() async {
+    await Future.delayed(Duration(seconds: 1));
+
+    if (!mounted) return;
+    final authService = Provider.of<AuthService>(context, listen: false);
+    final messageService = Provider.of<MessageService>(context, listen: false);
+
+    if (authService.isAuthenticated) {
+      if (!messageService.isConnected) {
+        messageService.connectToWebSocket();
+      }
+      await messageService.getPendingMessages();
+    }
+
+    setState(() {
+      _isLoading = false;
+    });
+
+    if (!mounted) return;
+    Navigator.pushReplacement(
+      context,
+      MaterialPageRoute(
+        builder:
+            (context) =>
+                authService.isAuthenticated ? HomeScreen() : LoginScreen(),
+      ),
+    );
   }
 
   @override
