@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:simple_messenger/utils/exceptions.dart';
 import '../constants/colors.dart';
 import '../services/auth_service.dart';
 import '../services/message_service.dart';
@@ -155,10 +156,21 @@ class _LoginScreenState extends State<LoginScreen> {
     );
   }
 
+  // Helper method to show error SnackBars
+  void _showErrorSnackBar(String message) {
+    if (!mounted) return; // Check mount status
+    setState(() => _isLoading = false); // Set loading state
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message)), // Show snackbar
+    );
+  }
+
   Future<void> _login() async {
+    // Basic validation for empty fields
     if (_emailController.text.isEmpty || _passwordController.text.isEmpty) {
+      // No need to set loading state here, just show message
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Por favor, rellena todos los campos.')),
+        SnackBar(content: Text('Por favor, introduce email y contraseña')),
       );
       return;
     }
@@ -167,44 +179,38 @@ class _LoginScreenState extends State<LoginScreen> {
       _isLoading = true;
     });
 
-
-    final authService = Provider.of<AuthService>(context, listen: false);
-    final email = _emailController.text.trim();
-    final password = _passwordController.text;
-
     try {
-      // Handle login
-      await authService.signIn(email, password);
-      _setLoading(false);
+      final authService = Provider.of<AuthService>(context, listen: false);
+      final email = _emailController.text.trim();
+      final password = _passwordController.text;
 
-      // Handle connection with web sockets
-      if(!mounted) return;
+      await authService.signIn(email, password);
+
+      if (!mounted) return;
+      // Success case: Reset loading state *before* navigation
+      setState(() {
+        _isLoading = false;
+      });
+
+      // Connect to WebSocket
       final messageService = Provider.of<MessageService>(
         context,
         listen: false,
       );
-
       messageService.connectToWebSocket();
 
-      // Handle navigation to Home Screen
       Navigator.pushReplacement(
         context,
         MaterialPageRoute(builder: (context) => HomeScreen()),
       );
-
-    } catch (e) {
-      _setLoading(false);
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(e.toString())));
+    } on InvalidCredentialsException { // Catch specific exception
+        _showErrorSnackBar('Email o contraseña incorrectos.'); // Use helper
+    } on InvalidEmailFormatException { // Catch specific exception
+        _showErrorSnackBar('Por favor, introduce un email válido.'); // Use helper
+    } catch (e) { // Catch generic exceptions
+        print('Unexpected login error: $e'); // Log unexpected errors
+        // Use helper, include original error string for more info if needed
+        _showErrorSnackBar('Error al iniciar sesión: ${e.toString()}');
     }
-  }
-
-  void _setLoading(bool val) {
-    if (!mounted) return;
-
-    setState(() {
-      _isLoading = val;
-    });
   }
 }

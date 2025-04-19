@@ -30,14 +30,18 @@ class AuthRepository extends BaseRepository {
         body: json.encode({'email': email, 'password': password}),
       );
 
-      if (response.statusCode == 422){
-        throw LoginException('Introduce un email válido');
+      if (response.statusCode == 422) {
+        throw InvalidEmailFormatException();
       } else if (response.statusCode == 401) {
-        throw LoginException('Email o contraseña incorrectos');
+        throw InvalidCredentialsException();
+      }
+
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        final errorBody = json.decode(response.body);
+        throw LoginException(errorBody['detail'] ?? 'Login failed');
       }
 
       return json.decode(response.body);
-
     });
   }
   
@@ -59,13 +63,38 @@ class AuthRepository extends BaseRepository {
           'display_name': displayName,
         }),
       );
-
-      if (response.statusCode == 201) {
-        return json.decode(response.body);
-      }
       
-      final error = json.decode(response.body);
-      throw Exception(error['detail'] ?? 'Error en el registro');
+      if (response.statusCode == 422) {
+        throw InvalidEmailFormatException();
+      }
+
+      if (response.statusCode == 400) {
+        final error = json.decode(response.body);
+        final detail = error['detail'] as String?;
+
+        if (detail != null) {
+          if (detail.contains("Username must be at least")) {
+            throw UsernameTooShortException();
+          } else if (detail == "Username already taken") {
+            throw UsernameTakenException();
+          } else if (detail == "Email already registered") {
+            throw EmailInUseException();
+          } else if (detail.contains("Password is too weak") || detail.contains("Password must contain")) {
+            throw PasswordTooWeakException();
+          } else {
+            throw RegistrationException(detail);
+          }
+        } else {
+          throw RegistrationException("Registration failed with status code 400.");
+        }
+      }
+
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        final errorBody = json.decode(response.body);
+        throw RegistrationException(errorBody['detail'] ?? 'Registration failed');
+      }
+
+      return json.decode(response.body);
     });
   }
   
