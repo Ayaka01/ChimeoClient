@@ -64,13 +64,24 @@ class ChatScreenState extends State<ChatScreen> {
     // Listen for new messages
     _messageService.messagesStream.listen((message) {
       // Filter only for this conversation
-      if ((message.senderId == widget.friend.username &&
-              message.recipientId == _authService.user!.username) ||
-          (message.senderId == _authService.user!.username &&
-              message.recipientId == widget.friend.username)) {
-        setState(() {});
-        
-        // Scroll to bottom for new messages
+      final currentUserId = _authService.user!.username; // Get current user ID safely
+      if ((message.senderId == widget.friend.username && message.recipientId == currentUserId) ||
+          (message.senderId == currentUserId && message.recipientId == widget.friend.username)) {
+
+        // Fetch the latest conversation state from the service
+        // This ensures we have the conversation including the new message
+        final updatedConversation = _messageService.conversations[widget.friend.username];
+
+        setState(() {
+          // Update the local _conversation variable ONLY if the service has it
+          // This is crucial for the build method to use the latest data
+          if (updatedConversation != null) {
+             _conversation = updatedConversation;
+          }
+          // The setState call itself triggers the rebuild using the updated _conversation
+        });
+
+        // Scroll to bottom for new incoming messages from the friend
         if (message.senderId == widget.friend.username) {
           _scrollToBottom();
         }
@@ -454,9 +465,6 @@ class ChatScreenState extends State<ChatScreen> {
 
   @override
   Widget build(BuildContext context) {
-    // Get updated conversation (for typing indicators, etc.)
-    _conversation = _messageService.conversations[widget.friend.username] ?? _conversation; 
-    
     return Scaffold(
       backgroundColor: Colors.white,
       appBar: AppBar(
