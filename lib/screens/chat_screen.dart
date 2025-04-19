@@ -64,13 +64,24 @@ class ChatScreenState extends State<ChatScreen> {
     // Listen for new messages
     _messageService.messagesStream.listen((message) {
       // Filter only for this conversation
-      if ((message.senderId == widget.friend.username &&
-              message.recipientId == _authService.user!.username) ||
-          (message.senderId == _authService.user!.username &&
-              message.recipientId == widget.friend.username)) {
-        setState(() {});
-        
-        // Scroll to bottom for new messages
+      final currentUserId = _authService.user!.username; // Get current user ID safely
+      if ((message.senderId == widget.friend.username && message.recipientId == currentUserId) ||
+          (message.senderId == currentUserId && message.recipientId == widget.friend.username)) {
+
+        // Fetch the latest conversation state from the service
+        // This ensures we have the conversation including the new message
+        final updatedConversation = _messageService.conversations[widget.friend.username];
+
+        setState(() {
+          // Update the local _conversation variable ONLY if the service has it
+          // This is crucial for the build method to use the latest data
+          if (updatedConversation != null) {
+             _conversation = updatedConversation;
+          }
+          // The setState call itself triggers the rebuild using the updated _conversation
+        });
+
+        // Scroll to bottom for new incoming messages from the friend
         if (message.senderId == widget.friend.username) {
           _scrollToBottom();
         }
@@ -428,11 +439,25 @@ class ChatScreenState extends State<ChatScreen> {
   // Method to actually clear messages locally (called after confirmation)
   void _removeAllMessagesLocally() {
     try {
-      // Call the new service method
-      _messageService.clearLocalMessagesForConversation(widget.friend.username);
+      final friendUsername = widget.friend.username;
+      // Call the service method to clear messages in the service and storage
+      _messageService.clearLocalMessagesForConversation(friendUsername);
       
-      // UI update will happen automatically via notifyListeners from the service
-      // No need for setState here
+      // Fetch the updated (now empty) conversation object from the service
+      final updatedConversation = _messageService.conversations[friendUsername];
+
+      // Call setState to force a rebuild using the updated state
+      setState(() {
+         // Ensure the local state variable reflects the cleared conversation
+         if (updatedConversation != null) {
+            _conversation = updatedConversation; 
+         } else {
+             // Fallback: If the conversation somehow disappeared from the service map,
+             // re-fetch/create it to ensure the UI shows an empty state.
+             _conversation = _messageService.getOrCreateConversation(widget.friend); 
+             _logger.w('Conversation was null after clearing for $friendUsername, re-created.', tag: 'ChatScreen');
+         }
+      });
 
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -454,9 +479,6 @@ class ChatScreenState extends State<ChatScreen> {
 
   @override
   Widget build(BuildContext context) {
-    // Get updated conversation (for typing indicators, etc.)
-    _conversation = _messageService.conversations[widget.friend.username] ?? _conversation; 
-    
     return Scaffold(
       backgroundColor: Colors.white,
       appBar: AppBar(
