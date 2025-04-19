@@ -1,4 +1,3 @@
-// lib/screens/login_screen.dart
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../constants/colors.dart';
@@ -13,10 +12,10 @@ class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
 
   @override
-  State<LoginScreen> createState() => LoginScreenState();
+  State<LoginScreen> createState() => _LoginScreenState();
 }
 
-class LoginScreenState extends State<LoginScreen> {
+class _LoginScreenState extends State<LoginScreen> {
   late final TextEditingController _emailController;
   late final TextEditingController _passwordController;
   bool _isLoading = false;
@@ -39,7 +38,6 @@ class LoginScreenState extends State<LoginScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.white,
       body: SafeArea(
         child: SingleChildScrollView(
           child: ConstrainedBox(
@@ -54,89 +52,18 @@ class LoginScreenState extends State<LoginScreen> {
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  // Top section
                   Column(
                     children: [
                       const SizedBox(height: 60),
-                      // Welcome text
-                      const Text(
-                        '¡Bienvenido a Chimeo!',
-                        style: TextStyle(
-                          fontSize: 24,
-                          fontWeight: FontWeight.bold,
-                          color: Color(0xFF1E1E1E),
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      const Text(
-                        'Plataforma de Mensajería Segura',
-                        style: TextStyle(fontSize: 16, color: Colors.grey),
-                      ),
+                      _buildHeader(),
                       const SizedBox(height: 40),
-                      // Email field
-                      CustomTextField(
-                        label: 'Email',
-                        controller: _emailController,
-                        keyboardType: TextInputType.emailAddress,
-                      ),
+                      _buildEmailField(),
                       const SizedBox(height: 16),
-                      // Password field
-                      CustomTextField(
-                        label: 'Contraseña',
-                        controller: _passwordController,
-                        obscureText: _obscurePassword,
-                        onToggleVisibility: () {
-                          setState(() {
-                            _obscurePassword = !_obscurePassword;
-                          });
-                        },
-                      ),
+                      _buildPasswordField(),
                       const SizedBox(height: 32),
-                      // Login button
-                      CustomButton(
-                        text: 'Iniciar Sesión',
-                        onPressed: _login,
-                        isLoading: _isLoading,
-                      ),
-                      const SizedBox(height: 24),
-
-                      // Add more space here
-                      const SizedBox(height: 40),
-
-                      // Registration prompt at bottom
-                      Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 16),
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            const Text(
-                              '¿Aún no tienes cuenta?',
-                              style: TextStyle(
-                                color: AppColors.secondary,
-                                fontSize: 13,
-                              ),
-                            ),
-                            GestureDetector(
-                              onTap: () {
-                                Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (context) => const RegisterScreen(),
-                                  ),
-                                );
-                              },
-                              child: const Text(
-                                ' Regístrate',
-                                style: TextStyle(
-                                  color: AppColors.primary,
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 13,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
+                      _buildLoginButton(),
+                      const SizedBox(height: 64),
+                      _buildRegistrationPrompt(context),
                     ],
                   ),
                 ],
@@ -148,10 +75,90 @@ class LoginScreenState extends State<LoginScreen> {
     );
   }
 
+  Widget _buildHeader() {
+    return const Column(
+      children: [
+        Text(
+          '¡Bienvenido a Chimeo!',
+          style: TextStyle(
+            fontSize: 24,
+            fontWeight: FontWeight.bold,
+            color: Color(0xFF1E1E1E),
+          ),
+        ),
+        SizedBox(height: 8),
+        Text(
+          'Plataforma de Mensajería Segura',
+          style: TextStyle(fontSize: 16, color: Colors.grey),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildEmailField() {
+    return CustomTextField(
+      label: 'Email',
+      controller: _emailController,
+      keyboardType: TextInputType.emailAddress,
+    );
+  }
+
+  Widget _buildPasswordField() {
+    return CustomTextField(
+      label: 'Contraseña',
+      controller: _passwordController,
+      obscureText: _obscurePassword,
+      onToggleVisibility: () {
+        setState(() {
+          _obscurePassword = !_obscurePassword;
+        });
+      },
+    );
+  }
+
+  Widget _buildLoginButton() {
+    return CustomButton(
+      text: 'Iniciar Sesión',
+      onPressed: _login,
+      isLoading: _isLoading,
+    );
+  }
+
+  Widget _buildRegistrationPrompt(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 16),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          const Text(
+            '¿Aún no tienes cuenta?',
+            style: TextStyle(color: AppColors.secondary, fontSize: 13),
+          ),
+          GestureDetector(
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => const RegisterScreen()),
+              );
+            },
+            child: const Text(
+              ' Regístrate',
+              style: TextStyle(
+                color: AppColors.primary,
+                fontWeight: FontWeight.bold,
+                fontSize: 13,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Future<void> _login() async {
     if (_emailController.text.isEmpty || _passwordController.text.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Por favor, introduce email y contraseña')),
+        SnackBar(content: Text('Por favor, rellena todos los campos.')),
       );
       return;
     }
@@ -160,45 +167,44 @@ class LoginScreenState extends State<LoginScreen> {
       _isLoading = true;
     });
 
+
+    final authService = Provider.of<AuthService>(context, listen: false);
+    final email = _emailController.text.trim();
+    final password = _passwordController.text;
+
     try {
-      final authService = Provider.of<AuthService>(context, listen: false);
-      final email = _emailController.text.trim();
-      final password = _passwordController.text;
-      
+      // Handle login
       await authService.signIn(email, password);
+      _setLoading(false);
 
-      if (!mounted) return;
-      
-      setState(() {
-        _isLoading = false;
-      });
-
-      // Connect to WebSocket
+      // Handle connection with web sockets
+      if(!mounted) return;
       final messageService = Provider.of<MessageService>(
         context,
         listen: false,
       );
+
       messageService.connectToWebSocket();
 
+      // Handle navigation to Home Screen
       Navigator.pushReplacement(
         context,
         MaterialPageRoute(builder: (context) => HomeScreen()),
       );
+
     } catch (e) {
-      if (!mounted) return;
-      
-      setState(() {
-        _isLoading = false;
-      });
-
-      String errorMessage = e.toString();
-      if (e.toString().contains('Credenciales inválidas')) {
-        errorMessage = 'Email o contraseña incorrectos';
-      }
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(errorMessage)),
-      );
+      _setLoading(false);
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(e.toString())));
     }
+  }
+
+  void _setLoading(bool val) {
+    if (!mounted) return;
+
+    setState(() {
+      _isLoading = val;
+    });
   }
 }

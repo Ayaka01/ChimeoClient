@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:simple_messenger/utils/exceptions.dart';
 import '../config/api_config.dart';
 import '../models/user_model.dart';
 import 'base_repository.dart';
@@ -29,15 +30,14 @@ class AuthRepository extends BaseRepository {
         body: json.encode({'email': email, 'password': password}),
       );
 
-      if (response.statusCode == 200) {
-        return json.decode(response.body);
+      if (response.statusCode == 422){
+        throw LoginException('Introduce un email válido');
+      } else if (response.statusCode == 401) {
+        throw LoginException('Email o contraseña incorrectos');
       }
-      
-      if (response.statusCode == 401 || response.statusCode == 403) {
-        throw Exception('Credenciales inválidas');
-      }
-      
-      throw Exception('Error en el inicio de sesión: ${response.statusCode}');
+
+      return json.decode(response.body);
+
     });
   }
   
