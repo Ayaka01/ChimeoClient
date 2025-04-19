@@ -116,29 +116,47 @@ class UserService {
     }
   }
 
-  // Respond to friend request
-  Future<UserModel?> respondToFriendRequest(
+  // Respond to friend request - returns true on success
+  Future<bool> respondToFriendRequest(
     String requestId,
     String action,
   ) async {
+    final token = _authService.token;
+    if (token == null) {
+       _logger.w('Attempted to respond to friend request without auth token', tag: 'UserService');
+       return false;
+    }
     try {
       final response = await http.post(
         Uri.parse('${ApiConfig.baseUrl}${ApiConfig.usersPath}/friends/respond'),
         headers: {
-          'Authorization': 'Bearer ${_authService.token}',
+          'Authorization': 'Bearer $token',
           'Content-Type': 'application/json',
         },
         body: json.encode({'request_id': requestId, 'action': action}),
       );
 
-      if (response.statusCode == 200) {
-        return UserModel.fromJson(json.decode(response.body));
+      // Check for successful status code (e.g., 200 OK or 204 No Content)
+      if (response.statusCode >= 200 && response.statusCode < 300) {
+         _logger.i('Successfully responded ($action) to friend request $requestId', tag: 'UserService');
+         return true; // Indicate success
+      } else {
+         // Log error with details if possible
+         String errorMessage = 'Failed to respond ($action) to friend request $requestId (Code: ${response.statusCode})';
+         try {
+           final responseBody = json.decode(response.body);
+           if (responseBody is Map && responseBody.containsKey('detail')) {
+             errorMessage = responseBody['detail'];
+           }
+         } catch (e) { /* Ignore parsing error */ }
+         _logger.e(errorMessage, tag: 'UserService');
+         // Optionally throw an exception here based on status code if needed
+         return false; // Indicate failure
       }
 
-      return null;
     } catch (e) {
-      _logger.e('Error responding to friend request', error: e, tag: 'UserService');
-      return null;
+      _logger.e('Error responding to friend request $requestId ($action)', error: e, tag: 'UserService');
+      return false; // Indicate failure
     }
   }
 

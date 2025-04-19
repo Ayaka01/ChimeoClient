@@ -196,11 +196,12 @@ class MessageService with ChangeNotifier {
   // Connect to WebSocket
   void connectToWebSocket() {
     if (_authService.user == null || _authService.token == null || !_isOnline) return;
+    if (_connected || _reconnectTimer != null) return; 
+
+    _logger.i('Attempting to connect to WebSocket...', tag: 'MessageService');
 
     try {
       final wsUrl = '${ApiConfig.wsUrl}${ApiConfig.messagesPath}/ws/${_authService.user!.username}';
-      
-      // Add authentication token to the WebSocket connection
       final uri = Uri.parse(wsUrl);
       final uriWithAuth = uri.replace(
         queryParameters: {'token': _authService.token},
@@ -243,12 +244,7 @@ class MessageService with ChangeNotifier {
       );
 
       // Send authentication message
-      _wsChannel?.sink.add(
-        json.encode({
-          'type': 'authenticate',
-          'token': _authService.token,
-        }),
-      );
+      _wsChannel?.sink.add(json.encode({'type': 'authenticate', 'token': _authService.token}));
 
       // Setup heartbeat to detect connection issues early
       _connectionMonitorTimer?.cancel();
@@ -262,11 +258,16 @@ class MessageService with ChangeNotifier {
 
       _connected = true;
       notifyListeners();
+      _reconnectTimer?.cancel(); 
+      _reconnectTimer = null;
 
       _logger.i('Connected to WebSocket server', tag: 'MessageService');
       
-      // Process any queued offline messages
+      // Process offline queue and fetch pending messages without awaiting
+      _logger.i('Processing offline queue & fetching pending messages concurrently...', tag: 'MessageService');
       _processOfflineQueue();
+      getPendingMessages();
+      
     } catch (e) {
       _logger.e('WebSocket connection error', error: e, tag: 'MessageService');
       _handleDisconnect();
@@ -275,14 +276,19 @@ class MessageService with ChangeNotifier {
 
   // Handle WebSocket disconnection
   void _handleDisconnect() {
+    _logger.w('WebSocket disconnected.', tag: 'MessageService');
     _connected = false;
+    _wsChannel = null; // Clear the channel
+    _connectionMonitorTimer?.cancel(); // Stop heartbeat
     notifyListeners();
 
-    // Only try to reconnect if online
-    if (_isOnline) {
-      // Try to reconnect after 5 seconds
-      _reconnectTimer?.cancel();
-      _reconnectTimer = Timer(Duration(seconds: 5), connectToWebSocket);
+    // Only try to reconnect if online and not already trying
+    if (_isOnline && _reconnectTimer == null) { 
+      _logger.i('Scheduling WebSocket reconnection in 5 seconds...', tag: 'MessageService');
+      _reconnectTimer = Timer(Duration(seconds: 5), () {
+         _reconnectTimer = null; // Clear timer before attempting connect
+         connectToWebSocket();
+      });
     }
   }
 
@@ -699,5 +705,24 @@ class MessageService with ChangeNotifier {
     _typingTimers.clear();
     
     super.dispose();
+  }
+
+  // Clear all locally stored messages for a specific conversation
+  Future<void> clearLocalMessagesForConversation(String friendUsername) async {
+    if (_conversations.containsKey(friendUsername)) {
+      final currentConversation = _conversations[friendUsername]!;
+      // Create a new conversation instance with messages cleared
+      // Assuming ConversationModel has a copyWith method
+      _conversations[friendUsername] = currentConversation.copyWith(messages: []); 
+      
+      // Persist the change
+      await _saveConversations();
+      
+      // Notify listeners (like ChatScreen) to rebuild
+      notifyListeners();
+      _logger.i('Cleared local messages for conversation with $friendUsername', tag: 'MessageService');
+    } else {
+       _logger.w('Attempted to clear messages for non-existent conversation: $friendUsername', tag: 'MessageService');
+    }
   }
 }

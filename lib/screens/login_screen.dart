@@ -156,7 +156,6 @@ class _LoginScreenState extends State<LoginScreen> {
     );
   }
 
-  // Helper method to show error SnackBars
   void _showErrorSnackBar(String message) {
     if (!mounted) return; // Check mount status
     setState(() => _isLoading = false); // Set loading state
@@ -166,9 +165,7 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Future<void> _login() async {
-    // Basic validation for empty fields
     if (_emailController.text.isEmpty || _passwordController.text.isEmpty) {
-      // No need to set loading state here, just show message
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Por favor, introduce email y contraseña')),
       );
@@ -187,7 +184,6 @@ class _LoginScreenState extends State<LoginScreen> {
       await authService.signIn(email, password);
 
       if (!mounted) return;
-      // Success case: Reset loading state *before* navigation
       setState(() {
         _isLoading = false;
       });
@@ -203,13 +199,11 @@ class _LoginScreenState extends State<LoginScreen> {
         context,
         MaterialPageRoute(builder: (context) => HomeScreen()),
       );
-    } on InvalidCredentialsException { // Catch specific exception
-        _showErrorSnackBar('Email o contraseña incorrectos.'); // Use helper
-    } on InvalidEmailFormatException { // Catch specific exception
-        _showErrorSnackBar('Por favor, introduce un email válido.'); // Use helper
-    } catch (e) { // Catch generic exceptions
-        print('Unexpected login error: $e'); // Log unexpected errors
-        // Use helper, include original error string for more info if needed
+    } on InvalidCredentialsException {
+        _showErrorSnackBar('Email o contraseña incorrectos.');
+    } on InvalidEmailFormatException {
+        _showErrorSnackBar('Por favor, introduce un email válido.');
+    } catch (e) {
         _showErrorSnackBar('Error al iniciar sesión: ${e.toString()}');
     }
   }

@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../services/user_service.dart';
 import '../models/user_model.dart';
 import 'package:simple_messenger/constants/colors.dart';
+import '../components/user_avatar.dart';
 
 class SearchUsersScreen extends StatefulWidget {
   const SearchUsersScreen({super.key});
@@ -112,51 +113,61 @@ class SearchUsersScreenState extends State<SearchUsersScreen> {
       ),
       body: Column(
         children: [
-          Padding(
-            padding: const EdgeInsets.all(16.0),
-            child: Row(
-              children: [
-                Expanded(
-                  child: TextField(
-                    controller: _searchController,
-                    decoration: InputDecoration(
-                      hintText:
-                          'Buscar por nombre de usuario o nombre completo',
-                      prefixIcon: Icon(Icons.search),
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      focusedBorder: OutlineInputBorder(
-                        borderSide: BorderSide(color: AppColors.primary),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                    ),
-                    onSubmitted: (_) => _searchUsers(),
-                    textInputAction: TextInputAction.search,
-                  ),
-                ),
-                SizedBox(width: 8),
-                ElevatedButton(
-                  onPressed: _searchUsers,
-                  style: ElevatedButton.styleFrom(
-                    padding: EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-                  ),
-                  child: Text('Buscar'),
-                ),
-              ],
-            ),
-          ),
+          _buildSearchBar(),
           Expanded(
-            child:
-                _isSearching
-                    ? Center(child: CircularProgressIndicator())
-                    : _searchResults.isEmpty
-                    ? _buildSearchInstructions()
-                    : _buildSearchResults(),
+            child: _buildBodyContent(),
           ),
         ],
       ),
     );
+  }
+
+  Widget _buildSearchBar() {
+    return Padding(
+      padding: const EdgeInsets.all(16.0),
+      child: TextField(
+        controller: _searchController,
+        decoration: InputDecoration(
+          hintText: 'Buscar por nombre de usuario o nombre completo',
+          hintStyle: TextStyle(fontSize: 14, color: Colors.grey[600]),
+          prefixIcon: Icon(Icons.search, color: Colors.grey),
+          suffixIcon: IconButton(
+            icon: Icon(Icons.search, color: AppColors.primary),
+            tooltip: 'Buscar',
+            onPressed: _searchUsers,
+          ),
+          filled: true,
+          fillColor: const Color(0xFFF5F5F5),
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(14),
+            borderSide: BorderSide.none,
+          ),
+          enabledBorder: OutlineInputBorder(
+             borderRadius: BorderRadius.circular(14),
+             borderSide: BorderSide.none,
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderSide: BorderSide(color: AppColors.primary, width: 1.5),
+            borderRadius: BorderRadius.circular(14),
+          ),
+          contentPadding: EdgeInsets.symmetric(vertical: 14, horizontal: 16),
+        ),
+        onSubmitted: (_) => _searchUsers(),
+        textInputAction: TextInputAction.search,
+      ),
+    );
+  }
+
+  Widget _buildBodyContent() {
+    if (_isSearching) {
+      return Center(child: CircularProgressIndicator());
+    } else if (_searchResults.isEmpty && _searchController.text.isEmpty) {
+      return _buildSearchInstructions();
+    } else if (_searchResults.isEmpty && _searchController.text.isNotEmpty) {
+      return _buildNoUsersFoundView();
+    } else {
+      return _buildSearchResultsList();
+    }
   }
 
   Widget _buildSearchInstructions() {
@@ -167,90 +178,83 @@ class SearchUsersScreenState extends State<SearchUsersScreen> {
           Icon(Icons.search, size: 64, color: Colors.grey),
           SizedBox(height: 16),
           Text(
-            'Busca usuarios por nombre o nombre de usuario',
+            'Busca usuarios por nombre de usuario',
             style: TextStyle(fontSize: 16, color: Colors.grey),
+            textAlign: TextAlign.center,
           ),
           SizedBox(height: 8),
           Text(
-            'Introduce al menos 3 caracteres para iniciar la búsqueda',
+            'Introduce al menos 3 caracteres',
             style: TextStyle(fontSize: 14, color: Colors.grey),
+            textAlign: TextAlign.center,
           ),
         ],
       ),
     );
   }
 
-  Widget _buildSearchResults() {
-    if (_searchResults.isEmpty) {
-      return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(Icons.person_off, size: 64, color: Colors.grey),
-            SizedBox(height: 16),
-            Text(
-              'No se encontraron usuarios',
-              style: TextStyle(fontSize: 16, color: Colors.grey),
-            ),
-            SizedBox(height: 8),
-            Text(
-              'Intenta con otros términos de búsqueda',
-              style: TextStyle(fontSize: 14, color: Colors.grey),
-            ),
-          ],
-        ),
-      );
-    }
-
+  Widget _buildSearchResultsList() {
     return ListView.builder(
       itemCount: _searchResults.length,
       itemBuilder: (context, index) {
         final user = _searchResults[index];
-        final isRequesting = _requestInProgress[user.username] ?? false;
-
-        return Card(
-          margin: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-          child: Padding(
-            padding: EdgeInsets.all(12),
-            child: Row(
-              children: [
-                CircleAvatar(
-                  backgroundColor: Theme.of(context).primaryColor,
-                  child: Text(user.displayName[0].toUpperCase()),
-                ),
-                SizedBox(width: 16),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        user.displayName,
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                      Text('@${user.username}'),
-                    ],
-                  ),
-                ),
-                SizedBox(width: 8),
-                isRequesting
-                    ? SizedBox(
-                      width: 24,
-                      height: 24,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                    : ElevatedButton.icon(
-                      icon: Icon(Icons.person_add),
-                      label: Text('Añadir'),
-                      onPressed: () => _sendFriendRequest(user),
-                    ),
-              ],
-            ),
-          ),
-        );
+        return _buildSearchResultTile(user);
       },
+    );
+  }
+
+  Widget _buildSearchResultTile(UserModel user) {
+    final isRequesting = _requestInProgress[user.username] ?? false;
+
+    return ListTile(
+      leading: UserAvatar(
+        displayName: user.displayName,
+        avatarUrl: user.avatarUrl,
+        size: 45,
+        backgroundColor: AppColors.primary.withOpacity(0.2),
+        textColor: AppColors.primary,
+      ),
+      title: Text(
+        user.displayName,
+        style: TextStyle(fontWeight: FontWeight.bold),
+      ),
+      subtitle: Text(
+        '@${user.username}',
+        style: TextStyle(color: Colors.grey[600]),
+      ),
+      trailing: isRequesting
+          ? SizedBox(
+              width: 24,
+              height: 24,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            )
+          : IconButton(
+              icon: Icon(Icons.person_add_alt_1_outlined, color: AppColors.primary),
+              tooltip: 'Añadir amigo',
+              onPressed: () => _sendFriendRequest(user),
+            ),
+      contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+    );
+  }
+
+  Widget _buildNoUsersFoundView() {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(Icons.person_search_outlined, size: 64, color: Colors.grey),
+          SizedBox(height: 16),
+          Text(
+            'No se encontraron usuarios',
+            style: TextStyle(fontSize: 16, color: Colors.grey),
+          ),
+          SizedBox(height: 8),
+          Text(
+            'Intenta con otros términos de búsqueda',
+            style: TextStyle(fontSize: 14, color: Colors.grey),
+          ),
+        ],
+      ),
     );
   }
 }

@@ -40,11 +40,27 @@ class ConversationModel {
     messages.add(message);
   }
 
-  // Replace a temporary message with a server message
+  // Replace a temporary message with a server message, preserving original timestamp
   void replaceMessage(String tempId, MessageModel serverMessage) {
     final index = messages.indexWhere((m) => m.id == tempId);
     if (index >= 0) {
-      messages[index] = serverMessage;
+      // Get the original timestamp from the temporary message
+      final originalTimestamp = messages[index].timestamp;
+      
+      // Create a new message using server data but keeping the original timestamp
+      final updatedMessage = serverMessage.copyWith(
+        timestamp: originalTimestamp, // Preserve the original client timestamp
+        isOffline: false, // Ensure it's marked as online now
+        id: serverMessage.id, // Ensure we use the final server ID
+      );
+      
+      // Replace the message in the list
+      messages[index] = updatedMessage;
+    } else {
+      // Optional: Handle case where temp message wasn't found (log warning?)
+      // Could happen if message was somehow deleted locally before confirmation
+      // For now, we can potentially just add the server message if not found
+      // messages.add(serverMessage); // Decide if this fallback is desired
     }
   }
 

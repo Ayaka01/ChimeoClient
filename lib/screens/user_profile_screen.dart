@@ -5,6 +5,7 @@ import '../services/auth_service.dart';
 import '../services/message_service.dart';
 import '../constants/colors.dart';
 import 'login_screen.dart';
+import '../components/user_avatar.dart';
 
 class UserProfileScreen extends StatefulWidget {
   const UserProfileScreen({super.key});
@@ -25,37 +26,68 @@ class UserProfileScreenState extends State<UserProfileScreen> {
     _messageService = Provider.of<MessageService>(context, listen: false);
   }
 
+  // Show confirmation dialog before signing out
   Future<void> _signOut() async {
-    setState(() {
-      _isLoading = true;
-    });
+    // Show confirmation dialog
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext dialogContext) {
+        return AlertDialog(
+          title: Text('Confirmar Cierre de Sesión'),
+          content: Text('¿Estás seguro de que quieres cerrar sesión?'),
+          actions: <Widget>[
+            TextButton(
+              child: Text('Cancelar'),
+              onPressed: () {
+                Navigator.of(dialogContext).pop(false); // Return false when cancelled
+              },
+            ),
+            TextButton(
+              child: Text('Cerrar Sesión', style: TextStyle(color: Colors.red)),
+              onPressed: () {
+                Navigator.of(dialogContext).pop(true); // Return true when confirmed
+              },
+            ),
+          ],
+        );
+      },
+    );
 
-    try {
-      // No need to explicitly call clearAllConversations here anymore
-      // as it will be handled within the authService.signOut() method
-      await _authService.signOut(context);
-
-      if (!mounted) return;
-      
-      Navigator.pushAndRemoveUntil(
-        context,
-        MaterialPageRoute(builder: (context) => LoginScreen()),
-        (route) => false,
-      );
-    } catch (e) {
-      if (!mounted) return;
-      
+    // Proceed only if the user confirmed (dialog returned true)
+    if (confirm == true) {
       setState(() {
-        _isLoading = false;
+        _isLoading = true;
       });
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Error: $e'),
-          backgroundColor: Colors.red,
-        ),
-      );
-    }
+      try {
+        await _authService.signOut(context);
+
+        if (!mounted) return;
+
+        // Navigate to LoginScreen after successful sign out
+        Navigator.pushAndRemoveUntil(
+          context,
+          MaterialPageRoute(builder: (context) => LoginScreen()),
+          (route) => false,
+        );
+        // No need to set _isLoading = false here as the screen is being replaced
+
+      } catch (e) {
+        if (!mounted) return;
+        
+        setState(() {
+          _isLoading = false;
+        });
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error al cerrar sesión: $e'), // More specific error
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } 
+    // If confirm is null or false, do nothing (dialog was dismissed or cancelled)
   }
 
   Future<void> _clearAllConversations() async {
@@ -123,48 +155,52 @@ class UserProfileScreenState extends State<UserProfileScreen> {
 
   @override
   Widget build(BuildContext context) {
-    if (_authService.user == null) {
-      return Scaffold(body: Center(child: Text('No hay sesión iniciada')));
+    final currentUser = _authService.user;
+    if (currentUser == null) {
+      // Handle case where user data might not be available yet
+      return Scaffold(
+        appBar: AppBar(title: Text('Mi perfil')), 
+        body: Center(child: CircularProgressIndicator()),
+      );
     }
 
     return Scaffold(
-      appBar: AppBar(title: Text('Mi perfil')),
+      appBar: AppBar(title: Text('Mi perfil')), 
       body:
-          _isLoading
+          _isLoading 
               ? Center(child: CircularProgressIndicator())
               : SingleChildScrollView(
-                padding: EdgeInsets.all(16),
+                padding: EdgeInsets.symmetric(vertical: 24, horizontal: 16),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.center,
                   children: [
-                    SizedBox(height: 20),
-
-                    // Profile avatar
-                    CircleAvatar(
-                      radius: 60,
-                      backgroundColor: AppColors.primary,
-                      child: Text(
-                        _authService.user!.displayName[0].toUpperCase(),
-                        style: TextStyle(fontSize: 40, color: Colors.white),
-                      ),
+                    // Use UserAvatar component
+                    UserAvatar(
+                      displayName: currentUser.displayName,
+                      avatarUrl: currentUser.avatarUrl,
+                      size: 100, // Larger size for profile screen
+                      // Customize background/text if needed
+                      // backgroundColor: AppColors.primary.withOpacity(0.1),
+                      // textColor: AppColors.primary,
                     ),
 
-                    SizedBox(height: 16),
+                    SizedBox(height: 20),
 
                     // Display name
                     Text(
-                      _authService.user!.displayName,
+                      currentUser.displayName,
                       style: TextStyle(
-                        fontSize: 22,
-                        fontWeight: FontWeight.bold,
+                        fontSize: 24, 
+                        fontWeight: FontWeight.w600, // Slightly bolder
                       ),
+                      textAlign: TextAlign.center,
                     ),
 
-                    SizedBox(height: 4),
+                    SizedBox(height: 6),
 
                     // Username
                     Text(
-                      '@${_authService.user!.username}',
+                      '@${currentUser.username}',
                       style: TextStyle(fontSize: 16, color: Colors.grey[600]),
                     ),
 
@@ -172,55 +208,53 @@ class UserProfileScreenState extends State<UserProfileScreen> {
 
                     // Account information section
                     _buildSectionHeader('Información de la cuenta'),
-
-                    // Note: We don't have access to email in UserModel currently,
-                    // so we'll just show username instead
+                    SizedBox(height: 8),
                     _buildInfoItem(
-                      Icons.email,
+                      Icons.alternate_email_outlined, // Icon for username
                       'Nombre de usuario',
-                      '@${_authService.user!.username}',
+                      '@${currentUser.username}',
                     ),
+                    // Add email here if it becomes available in UserModel
+                    // _buildInfoItem(Icons.email_outlined, 'Email', currentUser.email ?? 'N/A'),
 
-                    Divider(),
+                    Divider(height: 40, thickness: 1), // Add divider with more space
 
                     // Actions section
                     _buildSectionHeader('Acciones'),
+                    SizedBox(height: 8),
 
-                    // Clear all conversations
-                    _buildActionItem(
-                      Icons.delete_sweep,
-                      'Borrar todas las conversaciones',
-                      'Elimina todos los mensajes de tu dispositivo',
-                      Colors.orange,
-                      _clearAllConversations,
+                    // Clear all conversations - refactored to ListTile
+                    _buildActionListTile(
+                      icon: Icons.delete_sweep_outlined,
+                      title: 'Borrar todas las conversaciones',
+                      subtitle: 'Elimina todos los mensajes de tu dispositivo',
+                      color: Colors.orange[700]!, // Use a specific shade
+                      onTap: _clearAllConversations,
                     ),
 
-                    SizedBox(height: 12),
+                    SizedBox(height: 12), // Consistent spacing
 
-                    // Sign out
-                    _buildActionItem(
-                      Icons.logout,
-                      'Cerrar sesión',
-                      'Salir de la aplicación',
-                      Colors.red,
-                      _signOut,
+                    // Sign out - refactored to ListTile
+                    _buildActionListTile(
+                      icon: Icons.logout_outlined,
+                      title: 'Cerrar sesión',
+                      subtitle: 'Salir de la aplicación',
+                      color: Colors.red, 
+                      onTap: _signOut,
                     ),
 
-                    SizedBox(height: 40),
+                    SizedBox(height: 60), // More space before app info
 
                     // App information
                     Text(
-                      'Chimeo v1.0.0',
+                      'Chimeo v1.0.0', // TODO: Get version dynamically
                       style: TextStyle(fontSize: 14, color: Colors.grey),
                     ),
-
                     SizedBox(height: 8),
-
                     Text(
-                      '© 2025 Chimeo Messaging',
+                      '© ${DateTime.now().year} Chimeo Messaging',
                       style: TextStyle(fontSize: 12, color: Colors.grey),
                     ),
-
                     SizedBox(height: 20),
                   ],
                 ),
@@ -268,49 +302,32 @@ class UserProfileScreenState extends State<UserProfileScreen> {
     );
   }
 
-  Widget _buildActionItem(
-    IconData icon,
-    String title,
-    String subtitle,
-    Color color,
-    VoidCallback onTap,
-  ) {
-    return Card(
-      elevation: 1,
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(8),
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Row(
-            children: [
-              Icon(icon, color: color),
-              SizedBox(width: 16),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      title,
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                        color: color,
-                      ),
-                    ),
-                    SizedBox(height: 4),
-                    Text(
-                      subtitle,
-                      style: TextStyle(fontSize: 14, color: Colors.grey[600]),
-                    ),
-                  ],
-                ),
-              ),
-              Icon(Icons.chevron_right, color: Colors.grey),
-            ],
-          ),
+  // Refactored Action Item using ListTile
+  Widget _buildActionListTile({
+    required IconData icon,
+    required String title,
+    required String subtitle,
+    required Color color,
+    required VoidCallback onTap,
+  }) {
+    return ListTile(
+      leading: Icon(icon, color: color),
+      title: Text(
+        title,
+        style: TextStyle(
+          // fontSize: 16, // Default ListTile font size is usually fine
+          fontWeight: FontWeight.w500, // Medium weight
+          color: color,
         ),
       ),
+      subtitle: Text(subtitle, style: TextStyle(color: Colors.grey[600])),
+      onTap: onTap,
+      contentPadding: EdgeInsets.symmetric(horizontal: 8), // Adjust padding
+      shape: RoundedRectangleBorder( // Optional: Add subtle rounded corners
+        borderRadius: BorderRadius.circular(8),
+        side: BorderSide(color: Colors.grey[200]!, width: 1), // Optional: Subtle border
+      ),
+      // tileColor: Colors.grey[50], // Optional: Slight background color
     );
   }
 }

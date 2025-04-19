@@ -1,6 +1,6 @@
-// lib/screens/home_screen.dart
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:simple_messenger/config/app_config.dart';
 import 'package:simple_messenger/constants/colors.dart';
 import '../services/auth_service.dart';
 import '../services/message_service.dart';
@@ -20,10 +20,10 @@ class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
 
   @override
-  HomeScreenState createState() => HomeScreenState();
+  State<HomeScreen> createState() => _HomeScreenState();
 }
 
-class HomeScreenState extends State<HomeScreen>
+class _HomeScreenState extends State<HomeScreen>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
   late UserService _userService;
@@ -32,7 +32,6 @@ class HomeScreenState extends State<HomeScreen>
   List<UserModel> _friends = [];
   bool _isLoadingFriends = true;
   
-  // Search functionality
   final TextEditingController _searchController = TextEditingController();
   
   @override
@@ -86,29 +85,62 @@ class HomeScreenState extends State<HomeScreen>
     });
   }
 
+  // Show confirmation dialog before signing out from drawer
   void _signOut() async {
-    // Store mounted state before async operation
-    final isWidgetMounted = mounted;
-
-    // No need to explicitly clear conversations here anymore
-    // as it will be handled within the authService.signOut() method
-    await _authService.signOut(context);
-
-    // Check if widget is still mounted after async operation
-    if (isWidgetMounted && mounted) {
-      Navigator.pushAndRemoveUntil(
-        context,
-        MaterialPageRoute(builder: (context) => LoginScreen()),
-        (route) => false,
-      );
-    }
-  }
-  
-  void _openMessageSearch() {
-    Navigator.push(
-      context,
-      MaterialPageRoute(builder: (context) => MessageSearchScreen()),
+    // Show confirmation dialog
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext dialogContext) {
+        return AlertDialog(
+          title: Text('Confirmar Cierre de Sesión'),
+          content: Text('¿Estás seguro de que quieres cerrar sesión?'),
+          actions: <Widget>[
+            TextButton(
+              child: Text('Cancelar'),
+              onPressed: () {
+                Navigator.of(dialogContext).pop(false); // Return false
+              },
+            ),
+            TextButton(
+              child: Text('Cerrar Sesión', style: TextStyle(color: Colors.red)),
+              onPressed: () {
+                Navigator.of(dialogContext).pop(true); // Return true
+              },
+            ),
+          ],
+        );
+      },
     );
+
+    // Proceed only if the user confirmed
+    if (confirm == true) {
+      // Store mounted state before async operation
+      // (isLoading state not needed here as it's handled in ProfileScreen)
+      final isWidgetMounted = mounted; 
+
+      try {
+        await _authService.signOut(context);
+
+        // Check if widget is still mounted after async operation
+        if (isWidgetMounted && mounted) {
+          Navigator.pushAndRemoveUntil(
+            context,
+            MaterialPageRoute(builder: (context) => LoginScreen()),
+            (route) => false,
+          );
+        }
+      } catch (e) {
+         // Handle potential errors during sign out, though ProfileScreen might show its own
+         if (isWidgetMounted && mounted) { 
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text('Error al cerrar sesión: $e'),
+                backgroundColor: Colors.red,
+              ),
+            );
+         }
+      }
+    }
   }
 
   @override
@@ -124,14 +156,14 @@ class HomeScreenState extends State<HomeScreen>
       body: Column(
         children: [
           Theme(
-            data: Theme.of(context).copyWith(splashColor: Color(0xFFFFD700)), // Yellow color
+            data: Theme.of(context).copyWith(splashColor: AppColors.primary), // Yellow color
             child: TabBar(
               controller: _tabController,
               tabs: [
                 Tab(text: 'Chats'),
                 Tab(text: 'Amigos'),
               ],
-              labelColor: Colors.black,
+              labelColor: AppColors.secondary,
               indicatorColor: AppColors.primary,
               indicatorSize: TabBarIndicatorSize.tab,
             ),
@@ -149,9 +181,7 @@ class HomeScreenState extends State<HomeScreen>
   
   PreferredSizeWidget _buildAppBar() {
     return AppBar(
-      backgroundColor: Colors.white,
-      elevation: 0,
-      title: Text('Chimeo', style: TextStyle(color: Colors.black)),
+      title: Text(AppConfig.appName, style: TextStyle(color: AppColors.secondary)),
       actions: [
         Padding(
           padding: const EdgeInsets.only(right: 8.0),
@@ -171,152 +201,87 @@ class HomeScreenState extends State<HomeScreen>
   }
 
   Widget _buildConversationsList() {
-    final conversations = _messageService.conversations;
+    final sortedConversations = _getSortedConversations();
 
-    if (conversations.isEmpty) {
-      return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(Icons.chat_bubble_outline, size: 64, color: Colors.grey),
-            SizedBox(height: 16),
-            Text(
-              'No tienes conversaciones activas',
-              style: TextStyle(fontSize: 16, color: Colors.grey),
-            ),
-            SizedBox(height: 8),
-            Text(
-              'Busca amigos para empezar a chatear',
-              style: TextStyle(fontSize: 14, color: Colors.grey),
-            ),
-          ],
-        ),
-      );
+    if (sortedConversations.isEmpty) {
+      return _buildEmptyConversationsView();
     }
 
-    // Sort conversations by most recent message
-    final sortedConversations =
-        conversations.entries.toList()..sort((a, b) {
-          final aTime = a.value.lastMessage?.timestamp ?? DateTime(2000);
-          final bTime = b.value.lastMessage?.timestamp ?? DateTime(2000);
-          return bTime.compareTo(aTime);
-        });
-        
-    final filteredConversations = sortedConversations;
+    final filteredConversations = sortedConversations; 
 
-    return filteredConversations.isEmpty 
-      ? Center(
-          child: Text(
-            'No se encontraron conversaciones que coincidan',
-            style: TextStyle(color: Colors.grey),
+    return ListView.builder(
+      itemCount: filteredConversations.length,
+      itemBuilder: (context, index) {
+        final conversation = filteredConversations[index].value;
+        final friendId = filteredConversations[index].key;
+
+        final friend = _friends.firstWhere(
+          (f) => f.username == friendId,
+          orElse: () => UserModel(
+            username: friendId,
+            displayName: conversation.friendName,
+            avatarUrl: conversation.friendAvatarUrl,
+            lastSeen: DateTime.now(), 
+            status: UserStatus.offline, // Default status
           ),
-        )
-      : ListView.builder(
-        itemCount: filteredConversations.length,
-        itemBuilder: (context, index) {
-          final conversation = filteredConversations[index].value;
-          final friendId = filteredConversations[index].key;
-          final lastMessage = conversation.lastMessage;
-          
-          // Find the corresponding friend
-          final friend = _friends.firstWhere(
-            (f) => f.username == friendId,
-            orElse: () => UserModel(
-              username: friendId,
-              displayName: conversation.friendName,
-              lastSeen: DateTime.now(),
-            ),
-          );
+        );
 
-          return _buildConversationTile(conversation, friendId, lastMessage, friend);
-        },
-      );
+        return _buildConversationTile(conversation, friendId, friend);
+      },
+    );
+  }
+
+  List<MapEntry<String, ConversationModel>> _getSortedConversations() {
+    final conversations = _messageService.conversations;
+    final sortedList = conversations.entries.toList()
+      ..sort((a, b) {
+        // Use a very old date for conversations without messages to put them last
+        final aTime = a.value.lastMessage?.timestamp ?? DateTime(1970);
+        final bTime = b.value.lastMessage?.timestamp ?? DateTime(1970);
+        return bTime.compareTo(aTime); // Sort descending (most recent first)
+      });
+    return sortedList;
+  }
+
+  // Builds the view shown when there are no conversations
+  Widget _buildEmptyConversationsView() {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(Icons.chat_bubble_outline, size: 64, color: Colors.grey),
+          SizedBox(height: 16),
+          Text(
+            'No tienes conversaciones activas',
+            style: TextStyle(fontSize: 16, color: Colors.grey),
+          ),
+          SizedBox(height: 8),
+          Text(
+            'Busca amigos para empezar a chatear',
+            style: TextStyle(fontSize: 14, color: Colors.grey),
+          ),
+        ],
+      ),
+    );
   }
   
   Widget _buildConversationTile(
     ConversationModel conversation, 
-    String friendId, 
-    MessageModel? lastMessage,
+    String friendId,
     UserModel friend
   ) {
+    // Get last message directly from conversation model
+    final lastMessage = conversation.lastMessage; 
+
     return ListTile(
       leading: UserAvatar(
-        displayName: conversation.friendName,
-        avatarUrl: conversation.friendAvatarUrl,
+        displayName: friend.displayName,
+        avatarUrl: friend.avatarUrl,
         status: friend.status,
         size: 50,
       ),
-      title: Row(
-        children: [
-          Expanded(
-            child: Text(
-              conversation.friendName,
-              style: TextStyle(
-                fontWeight: FontWeight.bold,
-              ),
-              overflow: TextOverflow.ellipsis,
-            ),
-          ),
-          if (lastMessage != null)
-            Text(
-              _formatTimestamp(lastMessage.timestamp),
-              style: TextStyle(fontSize: 12, color: Colors.grey),
-            ),
-        ],
-      ),
-      subtitle: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          if (conversation.isTyping)
-            Row(
-              children: [
-                Text(
-                  'Escribiendo',
-                  style: TextStyle(
-                    fontStyle: FontStyle.italic,
-                    color: AppColors.primary,
-                  ),
-                ),
-                SizedBox(width: 4),
-                _buildTypingIndicator(),
-              ],
-            )
-          else if (lastMessage != null)
-            Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    lastMessage.text,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      color: lastMessage.error
-                          ? Colors.red
-                          : Colors.grey[600],
-                    ),
-                  ),
-                ),
-                SizedBox(width: 4),
-                if (lastMessage.senderId == _authService.user!.username)
-                  Icon(
-                    lastMessage.error
-                        ? Icons.error_outline
-                        : lastMessage.delivered
-                            ? Icons.done_all
-                            : Icons.done,
-                    size: 16,
-                    color: lastMessage.error
-                        ? Colors.red
-                        : lastMessage.read
-                            ? Colors.green
-                            : Colors.grey,
-                  ),
-              ],
-            )
-          else
-            Text('No hay mensajes'),
-        ],
-      ),
+      title: _buildConversationTitleRow(friend, lastMessage),
+      subtitle: _buildConversationSubtitle(conversation, lastMessage, friend),
       onTap: () {
         Navigator.push(
           context,
@@ -325,6 +290,97 @@ class HomeScreenState extends State<HomeScreen>
           ),
         ).then((_) => setState(() {}));
       },
+    );
+  }
+
+  // Builds the title row for the conversation tile
+  Widget _buildConversationTitleRow(UserModel friend, MessageModel? lastMessage) {
+    return Row(
+      children: [
+        Expanded(
+          child: Text(
+            friend.displayName,
+            style: TextStyle(
+              fontWeight: FontWeight.bold,
+            ),
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
+        if (lastMessage != null)
+          Text(
+            _formatTimestamp(lastMessage.timestamp),
+            style: TextStyle(fontSize: 12, color: Colors.grey),
+          ),
+      ],
+    );
+  }
+
+  // Builds the subtitle section for the conversation tile
+  Widget _buildConversationSubtitle(
+    ConversationModel conversation, 
+    MessageModel? lastMessage, 
+    UserModel friend
+  ) {
+    // Access typing status directly from the conversation model
+    bool isTyping = conversation.isTyping; 
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (isTyping)
+          Row(
+            children: [
+              Text(
+                'Escribiendo',
+                style: TextStyle(
+                  fontStyle: FontStyle.italic,
+                  color: AppColors.primary,
+                ),
+              ),
+              SizedBox(width: 4),
+              _buildTypingIndicator(),
+            ],
+          )
+        else if (lastMessage != null)
+          _buildLastMessageRow(lastMessage)
+        else
+          Text('No hay mensajes', style: TextStyle(color: Colors.grey[600])),
+      ],
+    );
+  }
+
+  // Builds the row displaying the last message text and status icon
+  Widget _buildLastMessageRow(MessageModel lastMessage) {
+    final bool isCurrentUserSender = lastMessage.senderId == _authService.user!.username;
+    
+    return Row(
+      children: [
+        Expanded(
+          child: Text(
+            lastMessage.text,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              color: lastMessage.error ? Colors.red : Colors.grey[600],
+            ),
+          ),
+        ),
+        SizedBox(width: 4),
+        if (isCurrentUserSender)
+          Icon(
+            lastMessage.error
+                ? Icons.error_outline
+                : lastMessage.delivered
+                    ? (lastMessage.read ? Icons.done_all_sharp : Icons.done_all)
+                    : Icons.done,
+            size: 16,
+            color: lastMessage.error
+                ? Colors.red
+                : lastMessage.read
+                    ? AppColors.primary
+                    : Colors.grey,
+          ),
+      ],
     );
   }
 
@@ -368,71 +424,77 @@ class HomeScreenState extends State<HomeScreen>
     }
 
     if (_friends.isEmpty) {
-      return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(Icons.people_outline, size: 64, color: Colors.grey),
-            SizedBox(height: 16),
-            Text(
-              'No tienes amigos añadidos',
-              style: TextStyle(fontSize: 16, color: Colors.grey),
-            ),
-            SizedBox(height: 8),
-            Text(
-              'Busca usuarios para añadirlos como amigos',
-              style: TextStyle(fontSize: 14, color: Colors.grey),
-            ),
-          ],
-        ),
-      );
+      return _buildEmptyFriendsView();
     }
-    
-    return _friends.isEmpty
-        ? Center(
-            child: Text(
-              'No se encontraron amigos que coincidan',
-              style: TextStyle(color: Colors.grey),
-            ),
-          )
-        : ListView.builder(
-            itemCount: _friends.length,
-            itemBuilder: (context, index) {
-              final friend = _friends[index];
-              
-              return ListTile(
-                leading: UserAvatar(
-                  displayName: friend.displayName,
-                  avatarUrl: friend.avatarUrl,
-                  status: friend.status,
-                  size: 50,
+
+    // Filtering logic could be added here later
+    final filteredFriends = _friends;
+
+    return ListView.builder(
+      itemCount: filteredFriends.length,
+      itemBuilder: (context, index) {
+        final friend = filteredFriends[index];
+        return _buildFriendListTile(friend);
+      },
+    );
+  }
+
+  // Builds the view shown when there are no friends
+  Widget _buildEmptyFriendsView() {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(Icons.people_outline, size: 64, color: Colors.grey),
+          SizedBox(height: 16),
+          Text(
+            'No tienes amigos añadidos',
+            style: TextStyle(fontSize: 16, color: Colors.grey),
+          ),
+          SizedBox(height: 8),
+          Text(
+            'Busca usuarios para añadirlos como amigos',
+            style: TextStyle(fontSize: 14, color: Colors.grey),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // Builds a single list tile for the friends list
+  Widget _buildFriendListTile(UserModel friend) {
+    return ListTile(
+      leading: UserAvatar(
+        displayName: friend.displayName,
+        avatarUrl: friend.avatarUrl,
+        status: friend.status,
+        size: 50,
+      ),
+      title: Text(friend.displayName),
+      subtitle: Text('@${friend.username}'),
+      trailing: friend.statusMessage != null
+          ? SizedBox(
+              width: 100, // Constrain width to prevent overflow
+              child: Text(
+                friend.statusMessage!,
+                style: TextStyle(
+                  fontStyle: FontStyle.italic,
+                  color: Colors.grey[600],
                 ),
-                title: Text(friend.displayName),
-                subtitle: Text('@${friend.username}'),
-                trailing: friend.statusMessage != null 
-                    ? SizedBox(
-                        width: 100,
-                        child: Text(
-                          friend.statusMessage!,
-                          style: TextStyle(
-                            fontStyle: FontStyle.italic,
-                            color: Colors.grey[600],
-                          ),
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      )
-                    : null,
-                onTap: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) => ChatScreen(friend: friend),
-                    ),
-                  ).then((_) => setState(() {}));
-                },
-              );
-            },
-          );
+                overflow: TextOverflow.ellipsis,
+                maxLines: 1,
+              ),
+            )
+          : null,
+      onTap: () {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => ChatScreen(friend: friend),
+          ),
+        ).then((_) => setState(() {})); // Refresh on return
+      },
+    );
   }
 
   Widget _buildNavigationDrawer() {
@@ -441,64 +503,116 @@ class HomeScreenState extends State<HomeScreen>
       child: ListView(
         padding: EdgeInsets.zero,
         children: [
-          UserAccountsDrawerHeader(
-            accountName: Text(_authService.user!.displayName),
-            accountEmail: Text('@${_authService.user!.username}'),
-            currentAccountPicture: UserAvatar(
-              displayName: _authService.user!.displayName,
-              size: 60,
-              onTap: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (context) => UserProfileScreen()),
-                );
-              },
-            ),
-            decoration: BoxDecoration(
-              color: AppColors.primary,
-            ),
-          ),
-          ListTile(
-            leading: Icon(Icons.person),
-            title: Text('Mi perfil'),
+          _buildDrawerHeader(),
+          _buildDrawerNavigationItems(),
+          Divider(),
+          _buildDrawerActionItems(),
+        ],
+      ),
+    );
+  }
+
+  // Builds the header for the navigation drawer
+  Widget _buildDrawerHeader() {
+    final currentUser = _authService.user;
+    if (currentUser == null) {
+      return const SizedBox.shrink(); 
+    }
+    // Replace UserAccountsDrawerHeader with a custom Container
+    return Container(
+      padding: const EdgeInsets.fromLTRB(16.0, 40.0, 16.0, 20.0), // Adjust top padding (consider safe area)
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          UserAvatar(
+            displayName: currentUser.displayName,
+            avatarUrl: currentUser.avatarUrl, 
+            size: 60,
             onTap: () {
-              Navigator.pop(context); // Close drawer
+              Navigator.pop(context); 
               Navigator.push(
                 context,
                 MaterialPageRoute(builder: (context) => UserProfileScreen()),
               );
             },
+            // Optional: Add specific background/text color if needed for header
+            // backgroundColor: AppColors.primary.withOpacity(0.2),
+            // textColor: AppColors.primary,
           ),
-          ListTile(
-            leading: Icon(Icons.search),
-            title: Text('Buscar usuarios'),
-            onTap: () {
-              Navigator.pop(context); // Close drawer
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (context) => SearchUsersScreen()),
-              ).then((_) => _loadFriends());
-            },
+          SizedBox(height: 12),
+          Text(
+            currentUser.displayName,
+            style: TextStyle(
+              fontSize: 16, 
+              fontWeight: FontWeight.bold, 
+              color: AppColors.secondary, // Match app bar color
+            ),
           ),
-          ListTile(
-            leading: Icon(Icons.person_add),
-            title: Text('Solicitudes de amistad'),
-            onTap: () {
-              Navigator.pop(context); // Close drawer
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (context) => FriendRequestsScreen()),
-              ).then((_) => _loadFriends());
-            },
-          ),
-          Divider(),
-          ListTile(
-            leading: Icon(Icons.logout),
-            title: Text('Cerrar sesión'),
-            onTap: _signOut,
+          SizedBox(height: 4),
+          Text(
+            '@${currentUser.username}',
+            style: TextStyle(fontSize: 14, color: Colors.grey[600]),
           ),
         ],
       ),
+    );
+  }
+
+  // Builds the main navigation items for the drawer
+  Widget _buildDrawerNavigationItems() {
+    return Column(
+      children: [
+        ListTile(
+          leading: Icon(Icons.person_outline), 
+          title: Text('Mi perfil'),
+          dense: true, // Make tile compact
+          onTap: () {
+            Navigator.pop(context); 
+            Navigator.push(
+              context,
+              MaterialPageRoute(builder: (context) => UserProfileScreen()),
+            );
+          },
+        ),
+        ListTile(
+          leading: Icon(Icons.search_outlined), 
+          title: Text('Buscar usuarios'),
+          dense: true, // Make tile compact
+          onTap: () {
+            Navigator.pop(context); 
+            Navigator.push(
+              context,
+              MaterialPageRoute(builder: (context) => SearchUsersScreen()),
+            ).then((_) => _loadFriends()); 
+          },
+        ),
+        ListTile(
+          leading: Icon(Icons.person_add_outlined), 
+          title: Text('Solicitudes de amistad'),
+          dense: true, // Make tile compact
+          onTap: () {
+            Navigator.pop(context); 
+            Navigator.push(
+              context,
+              MaterialPageRoute(builder: (context) => FriendRequestsScreen()),
+            ).then((_) => _loadFriends()); 
+          },
+        ),
+      ],
+    );
+  }
+
+  // Builds the action items (like sign out) for the drawer
+  Widget _buildDrawerActionItems() {
+    return Column(
+      children: [
+         ListTile(
+          leading: Icon(Icons.logout_outlined), 
+          title: Text('Cerrar sesión'),
+          dense: true, // Make tile compact
+          onTap: _signOut,
+        ),
+      ],
     );
   }
 

@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../services/user_service.dart';
 import '../models/friend_request_model.dart';
+import '../components/user_avatar.dart';
+import '../constants/colors.dart';
 
 class FriendRequestsScreen extends StatefulWidget {
   const FriendRequestsScreen({super.key});
@@ -98,7 +100,8 @@ class FriendRequestsScreenState extends State<FriendRequestsScreen>
 
   Future<void> _respondToRequest(String requestId, String action) async {
     try {
-      final result = await _userService.respondToFriendRequest(
+      // Now expects a boolean indicating success
+      final bool success = await _userService.respondToFriendRequest(
         requestId,
         action,
       );
@@ -106,7 +109,8 @@ class FriendRequestsScreenState extends State<FriendRequestsScreen>
       // Check if widget is still mounted after async operation
       if (!mounted) return;
 
-      if (result != null) {
+      // Check the boolean result
+      if (success) { 
         // Reload the lists
         _loadReceivedRequests();
         _loadSentRequests();
@@ -123,8 +127,16 @@ class FriendRequestsScreenState extends State<FriendRequestsScreen>
             backgroundColor: action == 'accept' ? Colors.green : null,
           ),
         );
+      } else {
+         // Show generic failure message if service returned false
+         ScaffoldMessenger.of(context).showSnackBar(
+           SnackBar(
+             content: Text('No se pudo ${action == 'accept' ? 'aceptar' : 'rechazar'} la solicitud.'),
+             backgroundColor: Colors.red,
+           )
+         );
       }
-    } catch (e) {
+    } catch (e) { // Catch any unexpected exceptions from the service call itself
       if (!mounted) return;
       
       ScaffoldMessenger.of(context).showSnackBar(
@@ -135,6 +147,35 @@ class FriendRequestsScreenState extends State<FriendRequestsScreen>
       );
     }
   }
+
+  /* // Comment out until UserService.cancelFriendRequest is available
+  Future<void> _cancelSentRequest(String requestId) async {
+    try {
+      // Assuming a UserService method exists
+      await _userService.cancelFriendRequest(requestId); 
+      
+      if (!mounted) return;
+      
+      // Reload sent requests list
+      _loadSentRequests(); 
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Solicitud cancelada'),
+          backgroundColor: Colors.grey[600], // Neutral color
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error al cancelar: ${e.toString()}'),
+          backgroundColor: Colors.red,
+        )
+      );
+    }
+  }
+  */
 
   @override
   Widget build(BuildContext context) {
@@ -148,13 +189,16 @@ class FriendRequestsScreenState extends State<FriendRequestsScreen>
       body: Column(
         children: [
           Theme(
-            data: Theme.of(context).copyWith(splashColor: Color(0xFFFFD700)),
+            data: Theme.of(context).copyWith(splashColor: AppColors.primary),
             child: TabBar(
               controller: _tabController,
-              tabs: [Tab(text: 'Recibidas'), Tab(text: 'Enviadas')],
+              tabs: [
+                Tab(text: 'Recibidas'), 
+                Tab(text: 'Enviadas')
+              ],
+              labelColor: AppColors.secondary,
+              indicatorColor: AppColors.primary,
               indicatorSize: TabBarIndicatorSize.tab,
-              indicatorColor: Color(0xFFFFD700),
-              labelColor: Colors.black,
             ),
           ),
           Expanded(
@@ -172,58 +216,77 @@ class FriendRequestsScreenState extends State<FriendRequestsScreen>
     if (_isLoadingReceived) {
       return Center(child: CircularProgressIndicator());
     }
-
     if (_receivedRequests.isEmpty) {
-      return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(Icons.person_outline, size: 64, color: Colors.grey),
-            SizedBox(height: 16),
-            Text(
-              'No tienes solicitudes de amistad pendientes',
-              style: TextStyle(fontSize: 16, color: Colors.grey),
-            ),
-          ],
-        ),
-      );
+      return _buildEmptyReceivedView();
     }
-
     return RefreshIndicator(
       onRefresh: _loadReceivedRequests,
       child: ListView.builder(
         itemCount: _receivedRequests.length,
         itemBuilder: (context, index) {
           final request = _receivedRequests[index];
-          return Card(
-            margin: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            child: Padding(
-              padding: EdgeInsets.all(12),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text(
-                        request.senderUsername,
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                      ElevatedButton(
-                        onPressed: () => _respondToRequest(request.id, 'accept'),
-                        child: Text('Accept'),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-          );
+          return _buildReceivedRequestTile(request);
         },
       ),
+    );
+  }
+
+  Widget _buildEmptyReceivedView() {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(Icons.person_search_outlined, size: 64, color: Colors.grey),
+          SizedBox(height: 16),
+          Text(
+            'No tienes solicitudes pendientes',
+            style: TextStyle(fontSize: 16, color: Colors.grey),
+            textAlign: TextAlign.center,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildReceivedRequestTile(FriendRequestModel request) {
+    return ListTile(
+      leading: UserAvatar(
+        displayName: request.senderUsername, 
+        size: 45,
+      ),
+      title: Text(
+        request.senderUsername,
+        style: TextStyle(fontWeight: FontWeight.bold),
+      ),
+      subtitle: Text('Quiere ser tu amigo'), 
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          OutlinedButton(
+            onPressed: () => _respondToRequest(request.id, 'reject'),
+            child: Icon(Icons.close, size: 18, color: Colors.red),
+            style: OutlinedButton.styleFrom(
+              padding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              minimumSize: Size(40, 36),
+              side: BorderSide(color: Colors.red.withOpacity(0.5)),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+            ),
+          ),
+          SizedBox(width: 8),
+          OutlinedButton(
+            onPressed: () => _respondToRequest(request.id, 'accept'),
+            child: Icon(Icons.check, size: 18, color: Colors.green[700]),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: Colors.green[700],
+              padding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              minimumSize: Size(40, 36),
+              side: BorderSide(color: Colors.green.withOpacity(0.5)),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+            ),
+          ),
+        ],
+      ),
+      contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
     );
   }
 
@@ -231,80 +294,51 @@ class FriendRequestsScreenState extends State<FriendRequestsScreen>
     if (_isLoadingSent) {
       return Center(child: CircularProgressIndicator());
     }
-
     if (_sentRequests.isEmpty) {
-      return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(Icons.person_add_disabled, size: 64, color: Colors.grey),
-            SizedBox(height: 16),
-            Text(
-              'No has enviado solicitudes de amistad',
-              style: TextStyle(fontSize: 16, color: Colors.grey),
-            ),
-          ],
-        ),
-      );
+      return _buildEmptySentView();
     }
-
     return RefreshIndicator(
       onRefresh: _loadSentRequests,
       child: ListView.builder(
         itemCount: _sentRequests.length,
         itemBuilder: (context, index) {
           final request = _sentRequests[index];
-          return ListTile(
-            leading: CircleAvatar(
-              backgroundColor: Theme.of(context).primaryColor,
-              child: Text(request.recipientUsername[0].toUpperCase()),
-            ),
-            title: Text(request.recipientUsername),
-            subtitle: Text('@${request.recipientUsername}'),
-            trailing: _getStatusChip(request.status),
-          );
+          return _buildSentRequestTile(request);
         },
       ),
     );
   }
 
-  Widget _getStatusChip(String status) {
-    Color chipColor;
-    Icon chipIcon;
-    String statusText;
-
-    switch (status) {
-      case 'pending':
-        chipColor = Colors.orange;
-        chipIcon = Icon(Icons.hourglass_empty, size: 16, color: Colors.white);
-        statusText = 'Pendiente';
-        break;
-      case 'accepted':
-        chipColor = Colors.green;
-        chipIcon = Icon(Icons.check, size: 16, color: Colors.white);
-        statusText = 'Aceptada';
-        break;
-      case 'rejected':
-        chipColor = Colors.red;
-        chipIcon = Icon(Icons.close, size: 16, color: Colors.white);
-        statusText = 'Rechazada';
-        break;
-      default:
-        chipColor = Colors.blue;
-        chipIcon = Icon(Icons.info, size: 16, color: Colors.white);
-        statusText = status;
-    }
-
-    return Chip(
-      backgroundColor: chipColor,
-      label: Row(
-        mainAxisSize: MainAxisSize.min,
+  Widget _buildEmptySentView() {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          chipIcon,
-          SizedBox(width: 4),
-          Text(statusText, style: TextStyle(color: Colors.white)),
+          Icon(Icons.outgoing_mail, size: 64, color: Colors.grey),
+          SizedBox(height: 16),
+          Text(
+            'No has enviado ninguna solicitud',
+            style: TextStyle(fontSize: 16, color: Colors.grey),
+            textAlign: TextAlign.center,
+          ),
         ],
       ),
+    );
+  }
+
+  Widget _buildSentRequestTile(FriendRequestModel request) {
+    return ListTile(
+      leading: UserAvatar(
+        displayName: request.recipientUsername, 
+        size: 45,
+      ),
+      title: Text(
+        request.recipientUsername,
+        style: TextStyle(fontWeight: FontWeight.bold),
+      ),
+      subtitle: Text('Solicitud enviada'),
+      trailing: null,
+      contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
     );
   }
 }

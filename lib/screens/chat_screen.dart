@@ -261,33 +261,73 @@ class ChatScreenState extends State<ChatScreen> {
   void _showMessageOptions(MessageModel message) {
     showModalBottomSheet(
       context: context,
-      builder: (context) => Column(
+      // Add rounded corners to the top of the sheet
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (context) => _buildMessageOptionsContent(message), // Use extracted builder
+    );
+  }
+
+  // Builds the content for the message options bottom sheet
+  Widget _buildMessageOptionsContent(MessageModel message) {
+    // Get current user ID for conditional options
+    final currentUserId = _authService.user?.username;
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8.0), // Add some vertical padding
+      child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
+          // Add a drag handle (optional but common UI pattern)
+          Container(
+            width: 40,
+            height: 4,
+            margin: const EdgeInsets.only(bottom: 10),
+            decoration: BoxDecoration(
+              color: Colors.grey[300],
+              borderRadius: BorderRadius.circular(2),
+            ),
+          ),
+          
+          // Example of a conditional action (e.g., Add All - maybe implement later)
+          /* 
           ListTile(
-            leading: Icon(Icons.add_comment),
-            title: Text('Add all messages'),
+            leading: Icon(Icons.playlist_add_outlined), // Use outlined icon
+            title: Text('Add all messages'), 
+            dense: true,
             onTap: () {
               Navigator.pop(context);
               // Implement the logic to add all messages
             },
           ),
+          */
+
+          // Copy Message Action
           ListTile(
-            leading: Icon(Icons.copy, color: AppColors.primary),
+            leading: Icon(Icons.copy_outlined, color: AppColors.primary), // Outlined icon
             title: Text('Copiar mensaje'),
+            dense: true, // Make tiles compact
             onTap: () {
               Navigator.pop(context);
-              _copyMessageToClipboard(message);
+              _copyMessageToClipboard(message); 
             },
           ),
-          ListTile(
-            leading: Icon(Icons.delete, color: Colors.red),
-            title: Text('Eliminar mensaje'),
-            onTap: () {
-              Navigator.pop(context);
-              _deleteMessage(message);
-            },
-          ),
+          
+          // Delete Message Action (Only show if user sent the message)
+          if (message.senderId == currentUserId) 
+            ListTile(
+              leading: Icon(Icons.delete_outline, color: Colors.red), // Outlined icon
+              title: Text('Eliminar mensaje'),
+              dense: true,
+              onTap: () {
+                Navigator.pop(context);
+                _deleteMessage(message); 
+              },
+            ),
+            
+          // Add a small bottom padding/spacer
+          SizedBox(height: 8),
         ],
       ),
     );
@@ -356,46 +396,78 @@ class ChatScreenState extends State<ChatScreen> {
     );
   }
 
+  // Add confirmation dialog for removing all messages
+  Future<void> _confirmRemoveAllMessages() async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext dialogContext) {
+        return AlertDialog(
+          title: Text('Eliminar todos los mensajes'),
+          content: Text(
+            '¿Estás seguro de que quieres eliminar todos los mensajes de esta conversación? Esta acción solo afecta a tu dispositivo y no se puede deshacer.',
+          ),
+          actions: <Widget>[
+            TextButton(
+              child: Text('Cancelar'),
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+            ),
+            TextButton(
+              child: Text('Eliminar', style: TextStyle(color: Colors.red)),
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (confirm == true) {
+      _removeAllMessagesLocally();
+    }
+  }
+
+  // Method to actually clear messages locally (called after confirmation)
+  void _removeAllMessagesLocally() {
+    try {
+      // Call the new service method
+      _messageService.clearLocalMessagesForConversation(widget.friend.username);
+      
+      // UI update will happen automatically via notifyListeners from the service
+      // No need for setState here
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Todos los mensajes eliminados localmente'),
+          backgroundColor: Colors.green,
+        ),
+      );
+    } catch (e) {
+      // Handle potential errors from the service method if needed
+      _logger.e('Error calling clearLocalMessagesForConversation', error: e, tag: 'ChatScreen');
+       ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error al eliminar mensajes: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    // Get updated conversation (for typing indicators)
-    _conversation = _messageService.conversations[widget.friend.username] ?? _conversation;
+    // Get updated conversation (for typing indicators, etc.)
+    _conversation = _messageService.conversations[widget.friend.username] ?? _conversation; 
     
     return Scaffold(
       backgroundColor: Colors.white,
       appBar: AppBar(
-        title: Row(
-          children: [
-            UserAvatar(
-              displayName: widget.friend.displayName,
-              avatarUrl: widget.friend.avatarUrl,
-              status: widget.friend.status,
-              size: 32,
-            ),
-            SizedBox(width: 8),
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  widget.friend.displayName,
-                  style: TextStyle(fontSize: 16),
-                ),
-                _conversation.isTyping
-                    ? Text(
-                        'Escribiendo...',
-                        style: TextStyle(fontSize: 12, color: Colors.green),
-                      )
-                    : Container(),
-              ],
-            ),
-          ],
-        ),
+        title: _buildAppBarTitle(),
         actions: [
           Padding(
             padding: const EdgeInsets.only(right: 8.0),
             child: IconButton(
-              icon: Icon(Icons.delete_forever, color: Colors.red),
-              onPressed: _removeAllMessages,
+              icon: Icon(Icons.delete_sweep_outlined, color: Colors.red),
+              tooltip: 'Eliminar todos los mensajes',
+              onPressed: _confirmRemoveAllMessages,
             ),
           ),
         ],
@@ -414,207 +486,312 @@ class ChatScreenState extends State<ChatScreen> {
     );
   }
 
-  Widget _buildMessageList() {
-    if (_conversation.messages.isEmpty) {
-      return Center(
-        child: Column(
+  Widget _buildAppBarTitle() {
+    final friendDisplayName = _conversation.friendName;
+    final friendAvatarUrl = _conversation.friendAvatarUrl;
+    final friendStatus = widget.friend.status;
+    final isTyping = _conversation.isTyping;
+
+    return Row(
+      children: [
+        UserAvatar(
+          displayName: friendDisplayName,
+          avatarUrl: friendAvatarUrl,
+          status: friendStatus,
+          size: 36,
+        ),
+        SizedBox(width: 12),
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(Icons.chat_bubble_outline, size: 64, color: Colors.grey),
-            SizedBox(height: 16),
             Text(
-              'No hay mensajes aún',
-              style: TextStyle(fontSize: 16, color: Colors.grey),
+              friendDisplayName,
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
             ),
-            SizedBox(height: 8),
-            Text(
-              'Envía un mensaje para iniciar la conversación',
-              style: TextStyle(fontSize: 14, color: Colors.grey),
-            ),
+            if (isTyping)
+              Text(
+                'Escribiendo...',
+                style: TextStyle(fontSize: 12, color: AppColors.primary, fontStyle: FontStyle.italic),
+              )
+            else if (friendStatus == UserStatus.online)
+               Text(
+                 'Online',
+                 style: TextStyle(fontSize: 12, color: Colors.green),
+               )
+             else
+               Container(),
           ],
         ),
-      );
+      ],
+    );
+  }
+
+  Widget _buildMessageList() {
+    if (_conversation.messages.isEmpty) {
+      return _buildEmptyChatView();
     }
 
-    // Sort messages by timestamp (newest at the bottom)
     final sortedMessages = List<MessageModel>.from(_conversation.messages)
-      ..sort((a, b) => b.timestamp.compareTo(a.timestamp));
+      ..sort((a, b) => a.timestamp.compareTo(b.timestamp));
 
     return ListView.builder(
-      // For chat UI, we want the most recent messages at the bottom
       reverse: true,
       controller: _scrollController,
       itemCount: sortedMessages.length,
-      padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      padding: EdgeInsets.symmetric(horizontal: 10, vertical: 12),
       itemBuilder: (context, index) {
-        final message = sortedMessages[index];
+        final messageIndex = sortedMessages.length - 1 - index;
+        final message = sortedMessages[messageIndex]; 
         final isFromMe = message.senderId == _authService.user!.username;
         final isHighlighted = message.id == _highlightedMessageId;
         
-        return _buildMessageBubble(message, isFromMe, isHighlighted);
+        // --- Debug Log --- 
+        final time = message.timestamp.toIso8601String();
+        final textStart = message.text.length > 15 ? "${message.text.substring(0, 15)}..." : message.text;
+        print('[ChatScreen Build] LV Index: $index -> Sorted Index: $messageIndex -> Time: $time -> Text: "$textStart"');
+        // --- End Debug Log ---
+
+        return _buildMessageBubble(
+          message,
+          isFromMe,
+          isHighlighted,
+          key: ValueKey(message.id),
+        );
       },
     );
   }
-  
+
+  Widget _buildEmptyChatView() {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(Icons.chat_bubble_outline, size: 64, color: Colors.grey[400]),
+          SizedBox(height: 16),
+          Text(
+            'Inicia la conversación',
+            style: TextStyle(fontSize: 16, color: Colors.grey[600]),
+          ),
+          SizedBox(height: 8),
+          Text(
+            'Los mensajes que envíes aparecerán aquí.',
+            style: TextStyle(fontSize: 14, color: Colors.grey[500]),
+            textAlign: TextAlign.center,
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildMessageBubble(
     MessageModel message, 
     bool isFromMe, 
-    bool isHighlighted
+    bool isHighlighted,
+    {Key? key}
   ) {
-    final isOffline = message.isOffline;
-    final hasError = message.error;
-    
-    return GestureDetector(
-      onLongPress: () => _showMessageOptions(message),
-      child: Container(
-        margin: EdgeInsets.symmetric(vertical: 8),
-        child: Row(
-          mainAxisAlignment:
-              isFromMe ? MainAxisAlignment.end : MainAxisAlignment.start,
-          crossAxisAlignment: CrossAxisAlignment.end,
-          children: [
-            if (!isFromMe)
-              UserAvatar(
+    return Container(
+      key: key,
+      // Use padding instead of margin for better gesture detection area
+      padding: EdgeInsets.symmetric(vertical: 4, horizontal: 0), 
+      child: Row(
+        mainAxisAlignment: isFromMe ? MainAxisAlignment.end : MainAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: [
+          // Show friend avatar on the left for received messages
+          if (!isFromMe)
+            Padding(
+              padding: const EdgeInsets.only(right: 8.0, bottom: 0), // Align with bottom of bubble
+              child: UserAvatar(
                 displayName: widget.friend.displayName,
                 avatarUrl: widget.friend.avatarUrl,
                 size: 28,
               ),
-              
-            SizedBox(width: 8),
-            
-            Flexible(
-              child: Container(
-                padding: EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                decoration: BoxDecoration(
-                  color: isHighlighted
-                      ? Colors.yellow[100]
-                      : isFromMe
-                          ? hasError 
-                              ? Colors.amber[100]
-                              : AppColors.primary.withAlpha(230)
-                          : Colors.grey[200],
-                  borderRadius: BorderRadius.circular(16),
-                ),
-                child: Column(
-                  crossAxisAlignment: 
-                      isFromMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      message.text,
-                      style: TextStyle(
-                        color: isFromMe && !hasError 
-                            ? Colors.white 
-                            : Colors.black,
-                      ),
-                    ),
-                    SizedBox(height: 4),
-                    Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(
-                          _formatTime(message.timestamp),
-                          style: TextStyle(
-                            fontSize: 10,
-                            color: isFromMe && !hasError 
-                                ? Colors.white.withAlpha(179) 
-                                : Colors.black54,
-                          ),
-                        ),
-                        SizedBox(width: 4),
-                        if (isFromMe)
-                          hasError
-                              ? Icon(Icons.error_outline, size: 12, color: Colors.red)
-                              : message.delivered
-                                  ? Icon(Icons.done_all, size: 12, 
-                                      color: message.read 
-                                          ? Colors.blue 
-                                          : Colors.white.withAlpha(179))
-                                  : Icon(Icons.done, size: 12, 
-                                      color: Colors.white.withAlpha(179)),
-                      ],
-                    ),
-                    if (hasError)
-                      Padding(
-                        padding: const EdgeInsets.only(top: 4.0),
-                        child: Text(
-                          message.errorMessage ?? 'Error al enviar',
-                          style: TextStyle(
-                            fontSize: 10,
-                            color: Colors.red,
-                          ),
-                        ),
-                      ),
-                  ],
-                ),
-              ),
             ),
             
-            SizedBox(width: 8),
-            
-            if (isFromMe)
-              SizedBox(width: 28), // To align with avatar on the left
-          ],
-        ),
+          // Flexible bubble container
+          Flexible(
+            child: GestureDetector( // GestureDetector on the bubble itself
+              onLongPress: () => _showMessageOptions(message),
+              child: Container(
+                padding: EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                decoration: _buildMessageBubbleDecoration(isFromMe, isHighlighted, message.error),
+                child: _buildMessageContent(message, isFromMe), // Extracted content
+              ),
+            ),
+          ),
+          
+          // Spacer for sent messages to align with left avatar
+          if (isFromMe)
+            SizedBox(width: 28 + 8), // Avatar size + padding
+        ],
       ),
+    );
+  }
+
+  // Builds the decoration for the message bubble
+  BoxDecoration _buildMessageBubbleDecoration(bool isFromMe, bool isHighlighted, bool hasError) {
+    return BoxDecoration(
+      color: isHighlighted
+          ? Colors.yellow[100] // Highlight color
+          : isFromMe
+              ? (hasError ? Colors.red[100] : AppColors.primary) // My message color (or error)
+              : Colors.grey[200], // Friend message color
+      borderRadius: BorderRadius.only(
+        topLeft: Radius.circular(16),
+        topRight: Radius.circular(16),
+        bottomLeft: Radius.circular(isFromMe ? 16 : 0), // Pointy corner
+        bottomRight: Radius.circular(isFromMe ? 0 : 16), // Pointy corner
+      ),
+    );
+  }
+
+  // Builds the content inside the message bubble (text + status/time)
+  Widget _buildMessageContent(MessageModel message, bool isFromMe) {
+    final bool hasError = message.error;
+    final Color textColor = isFromMe && !hasError ? Colors.white : Colors.black87;
+    
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start, // Text should align left initially
+      mainAxisSize: MainAxisSize.min, // Prevent column from taking full width
+      children: [
+        Text(
+          message.text,
+          style: TextStyle(color: textColor),
+        ),
+        SizedBox(height: 4),
+        _buildTimestampAndStatus(message, isFromMe), // Extracted row
+        // Show error message if applicable
+        if (hasError)
+          Padding(
+            padding: const EdgeInsets.only(top: 2.0),
+            child: Text(
+              message.errorMessage ?? 'Error al enviar',
+              style: TextStyle(fontSize: 10, color: Colors.red[700]),
+            ),
+          ),
+      ],
+    );
+  }
+
+  // Builds the row containing the timestamp and delivery status icon
+  Widget _buildTimestampAndStatus(MessageModel message, bool isFromMe) {
+    final bool hasError = message.error;
+    final Color timeStatusColor = isFromMe && !hasError 
+      ? Colors.white.withAlpha(180) // Lighter white for sent messages
+      : Colors.black54;
+
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      mainAxisAlignment: MainAxisAlignment.end, // Align this row to the end
+      children: [
+        Text(
+          _formatTime(message.timestamp),
+          style: TextStyle(fontSize: 10, color: timeStatusColor),
+        ),
+        // Add status icon only for messages sent by the current user
+        if (isFromMe)
+          Padding(
+            padding: const EdgeInsets.only(left: 4.0),
+            child: Icon(
+              hasError
+                  ? Icons.error_outline // Error icon
+                  : message.delivered
+                      ? (message.read ? Icons.done_all_sharp : Icons.done_all) // Read (sharp) vs Delivered
+                      : Icons.done, // Sent icon
+              size: 14,
+              color: hasError
+                  ? Colors.red[700] // Darker red for error icon
+                  : message.read
+                      ? AppColors.secondary // Accent color for read
+                      : timeStatusColor, // Same color as timestamp for sent/delivered
+            ),
+          ),
+      ],
     );
   }
 
   Widget _buildInputArea() {
     return Container(
-      padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      padding: EdgeInsets.symmetric(horizontal: 8, vertical: 8), // Slightly more vertical padding
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: Theme.of(context).cardColor, // Use theme card color
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withAlpha(13),
-            blurRadius: 4,
-            offset: Offset(0, -1),
+            color: Colors.black.withOpacity(0.05), // Softer shadow
+            blurRadius: 8,
+            offset: Offset(0, -2),
           ),
         ],
       ),
-      child: Row(
-        children: [
-          // Message input
-          Expanded(
-            child: TextField(
-              controller: _messageController,
-              focusNode: _messageFocusNode,
-              textCapitalization: TextCapitalization.sentences,
-              minLines: 1,
-              maxLines: 5,
-              decoration: InputDecoration(
-                hintText: 'Escribe un mensaje...',
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(24),
-                  borderSide: BorderSide.none,
-                ),
-                filled: true,
-                fillColor: Colors.grey[200],
-                contentPadding: EdgeInsets.symmetric(
-                  horizontal: 16,
-                  vertical: 8,
-                ),
+      child: SafeArea( // Ensure input isn't obscured by notches/nav bars
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.end, // Align items to bottom
+          children: [
+            // Message input
+            Expanded(
+              child: TextField(
+                controller: _messageController,
+                focusNode: _messageFocusNode,
+                textCapitalization: TextCapitalization.sentences,
+                minLines: 1,
+                maxLines: 5, // Allow multi-line input
+                decoration: _buildInputDecoration(), // Use extracted decoration
+                onTap: _scrollToBottom, // Scroll when tapped
+                keyboardType: TextInputType.multiline, // Ensure multiline keyboard
               ),
-              onTap: _scrollToBottom,
             ),
-          ),
-          // Send button
-          IconButton(
-            icon: _isSending
-                ? SizedBox(
-                    width: 24,
-                    height: 24,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2,
-                      valueColor: AlwaysStoppedAnimation(AppColors.primary),
-                    ),
-                  )
-                : Icon(Icons.send),
-            color: AppColors.primary,
-            onPressed: _isSending ? null : _sendMessage,
-          ),
-        ],
+            SizedBox(width: 8),
+            // Send button
+            // Use CircleAvatar for a round button look
+            CircleAvatar(
+              radius: 22,
+              backgroundColor: AppColors.primary,
+              child: IconButton(
+                icon: _isSending
+                    ? SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          valueColor: AlwaysStoppedAnimation(Colors.white), // White indicator
+                        ),
+                      )
+                    : Icon(Icons.send, color: Colors.white, size: 20), // White icon
+                tooltip: 'Enviar mensaje', // Tooltip
+                onPressed: _isSending ? null : _sendMessage,
+              ),
+            ),
+          ],
+        ),
       ),
+    );
+  }
+
+  // Builds the InputDecoration for the message input field
+  InputDecoration _buildInputDecoration() {
+    return InputDecoration(
+      hintText: 'Escribe un mensaje...',
+      hintStyle: TextStyle(color: Colors.grey[500]), // Slightly lighter hint
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(24), // Rounded corners
+        borderSide: BorderSide.none, // No border
+      ),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(24),
+        borderSide: BorderSide.none,
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(24),
+        borderSide: BorderSide.none, // No border even when focused (rely on fill color)
+      ),
+      filled: true,
+      fillColor: Colors.grey[100], // Lighter fill color
+      contentPadding: EdgeInsets.symmetric(
+        horizontal: 16,
+        vertical: 10, // Adjust vertical padding
+      ),
+      isDense: true, // Reduces intrinsic height
     );
   }
 
@@ -622,18 +799,5 @@ class ChatScreenState extends State<ChatScreen> {
     final hour = time.hour.toString().padLeft(2, '0');
     final minute = time.minute.toString().padLeft(2, '0');
     return '$hour:$minute';
-  }
-
-  void _removeAllMessages() {
-    // Implement the logic to remove all messages from the conversation
-    setState(() {
-      _conversation.messages.clear();
-    });
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('All messages removed'),
-        backgroundColor: Colors.green,
-      ),
-    );
   }
 }
