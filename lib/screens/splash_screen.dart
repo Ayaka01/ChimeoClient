@@ -24,12 +24,6 @@ class _SplashScreenState extends State<SplashScreen> {
     _checkAuthStatus();
   }
 
-  @override
-  void setState(VoidCallback fn) {
-    if (mounted) {
-      super.setState(fn);
-    }
-  }
 
   Future<void> _checkAuthStatus() async {
     await Future.delayed(Duration(seconds: 1));
@@ -45,11 +39,11 @@ class _SplashScreenState extends State<SplashScreen> {
       await messageService.getPendingMessages();
     }
 
+    if(!mounted) return;
     setState(() {
       _isLoading = false;
     });
 
-    if (!mounted) return;
     Navigator.pushReplacement(
       context,
       MaterialPageRoute(

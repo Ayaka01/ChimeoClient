@@ -1,4 +1,3 @@
-// lib/screens/user_profile_screen.dart
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../services/auth_service.dart';
@@ -26,7 +25,6 @@ class UserProfileScreenState extends State<UserProfileScreen> {
     _messageService = Provider.of<MessageService>(context, listen: false);
   }
 
-  // Show confirmation dialog before signing out
   Future<void> _signOut() async {
     // Show confirmation dialog
     final confirm = await showDialog<bool>(
@@ -39,13 +37,13 @@ class UserProfileScreenState extends State<UserProfileScreen> {
             TextButton(
               child: Text('Cancelar'),
               onPressed: () {
-                Navigator.of(dialogContext).pop(false); // Return false when cancelled
+                Navigator.of(dialogContext).pop(false);
               },
             ),
             TextButton(
               child: Text('Cerrar Sesión', style: TextStyle(color: Colors.red)),
               onPressed: () {
-                Navigator.of(dialogContext).pop(true); // Return true when confirmed
+                Navigator.of(dialogContext).pop(true);
               },
             ),
           ],
@@ -53,24 +51,22 @@ class UserProfileScreenState extends State<UserProfileScreen> {
       },
     );
 
-    // Proceed only if the user confirmed (dialog returned true)
     if (confirm == true) {
       setState(() {
         _isLoading = true;
       });
 
       try {
+        if(!mounted) return;
         await _authService.signOut(context);
 
         if (!mounted) return;
 
-        // Navigate to LoginScreen after successful sign out
         Navigator.pushAndRemoveUntil(
           context,
           MaterialPageRoute(builder: (context) => LoginScreen()),
           (route) => false,
         );
-        // No need to set _isLoading = false here as the screen is being replaced
 
       } catch (e) {
         if (!mounted) return;
@@ -81,13 +77,12 @@ class UserProfileScreenState extends State<UserProfileScreen> {
 
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Error al cerrar sesión: $e'), // More specific error
+            content: Text('Error al cerrar sesión: $e'),
             backgroundColor: Colors.red,
           ),
         );
       }
     } 
-    // If confirm is null or false, do nothing (dialog was dismissed or cancelled)
   }
 
   Future<void> _clearAllConversations() async {
@@ -157,7 +152,6 @@ class UserProfileScreenState extends State<UserProfileScreen> {
   Widget build(BuildContext context) {
     final currentUser = _authService.user;
     if (currentUser == null) {
-      // Handle case where user data might not be available yet
       return Scaffold(
         appBar: AppBar(title: Text('Mi perfil')), 
         body: Center(child: CircularProgressIndicator()),
@@ -174,22 +168,20 @@ class UserProfileScreenState extends State<UserProfileScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.center,
                   children: [
-                    // Use UserAvatar component
                     UserAvatar(
                       displayName: currentUser.displayName,
                       avatarUrl: currentUser.avatarUrl,
-                      size: 100, // Larger size for profile screen
-                      // Customize background/text if needed
-                      // backgroundColor: AppColors.primary.withOpacity(0.1),
-                      // textColor: AppColors.primary,
+                      size: 80,
+                      backgroundColor: AppColors.primary.withOpacity(0.1),
+                      textColor: AppColors.primary,
                     ),
 
                     SizedBox(height: 20),
 
-                    // Display name
                     Text(
                       currentUser.displayName,
                       style: TextStyle(
+                        color: AppColors.secondary,
                         fontSize: 24, 
                         fontWeight: FontWeight.w600, // Slightly bolder
                       ),
@@ -205,25 +197,9 @@ class UserProfileScreenState extends State<UserProfileScreen> {
                     ),
 
                     SizedBox(height: 40),
-
-                    // Account information section
-                    _buildSectionHeader('Información de la cuenta'),
-                    SizedBox(height: 8),
-                    _buildInfoItem(
-                      Icons.alternate_email_outlined, // Icon for username
-                      'Nombre de usuario',
-                      '@${currentUser.username}',
-                    ),
-                    // Add email here if it becomes available in UserModel
-                    // _buildInfoItem(Icons.email_outlined, 'Email', currentUser.email ?? 'N/A'),
-
-                    Divider(height: 40, thickness: 1), // Add divider with more space
-
-                    // Actions section
                     _buildSectionHeader('Acciones'),
                     SizedBox(height: 8),
 
-                    // Clear all conversations - refactored to ListTile
                     _buildActionListTile(
                       icon: Icons.delete_sweep_outlined,
                       title: 'Borrar todas las conversaciones',
@@ -232,9 +208,8 @@ class UserProfileScreenState extends State<UserProfileScreen> {
                       onTap: _clearAllConversations,
                     ),
 
-                    SizedBox(height: 12), // Consistent spacing
+                    SizedBox(height: 12),
 
-                    // Sign out - refactored to ListTile
                     _buildActionListTile(
                       icon: Icons.logout_outlined,
                       title: 'Cerrar sesión',
@@ -243,11 +218,10 @@ class UserProfileScreenState extends State<UserProfileScreen> {
                       onTap: _signOut,
                     ),
 
-                    SizedBox(height: 60), // More space before app info
+                    SizedBox(height: 60),
 
-                    // App information
                     Text(
-                      'Chimeo v1.0.0', // TODO: Get version dynamically
+                      'Chimeo v1.0.0',
                       style: TextStyle(fontSize: 14, color: Colors.grey),
                     ),
                     SizedBox(height: 8),
@@ -279,30 +253,6 @@ class UserProfileScreenState extends State<UserProfileScreen> {
     );
   }
 
-  Widget _buildInfoItem(IconData icon, String label, String value) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 8),
-      child: Row(
-        children: [
-          Icon(icon, color: Colors.grey[600]),
-          SizedBox(width: 12),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                label,
-                style: TextStyle(fontSize: 14, color: Colors.grey[600]),
-              ),
-              SizedBox(height: 2),
-              Text(value, style: TextStyle(fontSize: 16)),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
-  // Refactored Action Item using ListTile
   Widget _buildActionListTile({
     required IconData icon,
     required String title,
@@ -322,12 +272,11 @@ class UserProfileScreenState extends State<UserProfileScreen> {
       ),
       subtitle: Text(subtitle, style: TextStyle(color: Colors.grey[600])),
       onTap: onTap,
-      contentPadding: EdgeInsets.symmetric(horizontal: 8), // Adjust padding
-      shape: RoundedRectangleBorder( // Optional: Add subtle rounded corners
+      contentPadding: EdgeInsets.symmetric(horizontal: 8),
+      shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(8),
-        side: BorderSide(color: Colors.grey[200]!, width: 1), // Optional: Subtle border
+        side: BorderSide(color: Colors.grey[200]!, width: 1),
       ),
-      // tileColor: Colors.grey[50], // Optional: Slight background color
     );
   }
 }

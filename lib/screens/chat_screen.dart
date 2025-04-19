@@ -36,9 +36,7 @@ class ChatScreenState extends State<ChatScreen> {
   late ScrollController _scrollController;
   bool _isSending = false;
   String? _highlightedMessageId;
-  Timer? _typingTimer;
-  bool _isTyping = false;
-  
+
   final _logger = Logger();
 
   @override
@@ -55,11 +53,11 @@ class ChatScreenState extends State<ChatScreen> {
     // Set initial highlighted message if provided
     _highlightedMessageId = widget.highlightMessageId;
     
-    // Setup focus node and typing detection
+    // Setup focus node 
     _messageFocusNode.addListener(_onFocusChange);
     
-    // Setup controller listener for typing detection
-    _messageController.addListener(_onTextChange);
+    // Setup controller listener (removed typing detection)
+    // _messageController.addListener(_onTextChange); // Removed
 
     // Listen for new messages
     _messageService.messagesStream.listen((message) {
@@ -93,7 +91,8 @@ class ChatScreenState extends State<ChatScreen> {
       setState(() {});
     });
     
-    // Listen for typing indicators
+    // Listen for typing indicators - Removed
+    /*
     _messageService.typingStream.listen((data) {
       final username = data['username'] as String;
       
@@ -102,6 +101,7 @@ class ChatScreenState extends State<ChatScreen> {
         setState(() {});
       }
     });
+    */
     
     // If there's a highlighted message, scroll to it after build
     if (_highlightedMessageId != null) {
@@ -137,14 +137,16 @@ class ChatScreenState extends State<ChatScreen> {
       _scrollToBottom();
     }
   }
-  
+
+  // Removed _onTextChange method for typing indicator
+  /*
   void _onTextChange() {
     // Send typing indicator when user starts typing
     if (_messageController.text.isNotEmpty && !_isTyping) {
       _isTyping = true;
       _messageService.sendTypingIndicator(widget.friend.username, true);
     }
-    
+
     // Reset typing timer
     _typingTimer?.cancel();
     _typingTimer = Timer(Duration(seconds: 3), () {
@@ -154,6 +156,7 @@ class ChatScreenState extends State<ChatScreen> {
       }
     });
   }
+  */
   
   void _scrollToHighlightedMessage() {
     if (_highlightedMessageId == null) return;
@@ -203,15 +206,15 @@ class ChatScreenState extends State<ChatScreen> {
 
   @override
   void dispose() {
-    _messageController.removeListener(_onTextChange);
+    // _messageController.removeListener(_onTextChange); // Removed
     _messageController.dispose();
     _messageFocusNode.removeListener(_onFocusChange);
     _messageFocusNode.dispose();
     _scrollController.dispose();
-    _typingTimer?.cancel();
-    
-    // Ensure typing indicator is off when leaving
-    _messageService.sendTypingIndicator(widget.friend.username, false);
+    // _typingTimer?.cancel(); // Removed
+
+    // Ensure typing indicator is off when leaving - Removed
+    // _messageService.sendTypingIndicator(widget.friend.username, false);
     
     super.dispose();
   }
@@ -227,11 +230,11 @@ class ChatScreenState extends State<ChatScreen> {
     try {
       // Clear text field before sending to avoid duplicate send
       _messageController.clear();
-      
-      // Reset typing indicator
-      _isTyping = false;
-      _typingTimer?.cancel();
-      _messageService.sendTypingIndicator(widget.friend.username, false);
+
+      // Reset typing indicator - Removed
+      // _isTyping = false;
+      // _typingTimer?.cancel();
+      // _messageService.sendTypingIndicator(widget.friend.username, false);
 
       final message = await _messageService.sendMessage(
         widget.friend.username,
@@ -480,7 +483,6 @@ class ChatScreenState extends State<ChatScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.white,
       appBar: AppBar(
         title: _buildAppBarTitle(),
         actions: [
@@ -511,15 +513,12 @@ class ChatScreenState extends State<ChatScreen> {
   Widget _buildAppBarTitle() {
     final friendDisplayName = _conversation.friendName;
     final friendAvatarUrl = _conversation.friendAvatarUrl;
-    final friendStatus = widget.friend.status;
-    final isTyping = _conversation.isTyping;
 
     return Row(
       children: [
         UserAvatar(
           displayName: friendDisplayName,
           avatarUrl: friendAvatarUrl,
-          status: friendStatus,
           size: 36,
         ),
         SizedBox(width: 12),
@@ -529,20 +528,9 @@ class ChatScreenState extends State<ChatScreen> {
           children: [
             Text(
               friendDisplayName,
-              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
             ),
-            if (isTyping)
-              Text(
-                'Escribiendo...',
-                style: TextStyle(fontSize: 12, color: AppColors.primary, fontStyle: FontStyle.italic),
-              )
-            else if (friendStatus == UserStatus.online)
-               Text(
-                 'Online',
-                 style: TextStyle(fontSize: 12, color: Colors.green),
-               )
-             else
-               Container(),
+            Container(), // Keep a container for potential future use or consistent spacing
           ],
         ),
       ],
@@ -567,12 +555,6 @@ class ChatScreenState extends State<ChatScreen> {
         final message = sortedMessages[messageIndex]; 
         final isFromMe = message.senderId == _authService.user!.username;
         final isHighlighted = message.id == _highlightedMessageId;
-        
-        // --- Debug Log --- 
-        final time = message.timestamp.toIso8601String();
-        final textStart = message.text.length > 15 ? "${message.text.substring(0, 15)}..." : message.text;
-        print('[ChatScreen Build] LV Index: $index -> Sorted Index: $messageIndex -> Time: $time -> Text: "$textStart"');
-        // --- End Debug Log ---
 
         return _buildMessageBubble(
           message,

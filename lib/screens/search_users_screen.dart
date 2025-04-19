@@ -105,11 +105,8 @@ class SearchUsersScreenState extends State<SearchUsersScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.white,
       appBar: AppBar(
         title: Text('Buscar usuarios'),
-        backgroundColor: Colors.white,
-        elevation: 0,
       ),
       body: Column(
         children: [
@@ -179,7 +176,7 @@ class SearchUsersScreenState extends State<SearchUsersScreen> {
           SizedBox(height: 16),
           Text(
             'Busca usuarios por nombre de usuario',
-            style: TextStyle(fontSize: 16, color: Colors.grey),
+            style: Theme.of(context).textTheme.bodyMedium,
             textAlign: TextAlign.center,
           ),
           SizedBox(height: 8),
@@ -246,7 +243,7 @@ class SearchUsersScreenState extends State<SearchUsersScreen> {
           SizedBox(height: 16),
           Text(
             'No se encontraron usuarios',
-            style: TextStyle(fontSize: 16, color: Colors.grey),
+            style: Theme.of(context).textTheme.bodyMedium,
           ),
           SizedBox(height: 8),
           Text(

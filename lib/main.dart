@@ -59,19 +59,16 @@ class MyApp extends StatelessWidget {
         foregroundColor: AppColors.secondary,
         centerTitle: true,
       ),
+      textTheme: TextTheme(
+        titleLarge: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: AppColors.secondary),
+        bodyMedium: TextStyle(fontSize: 16, color: Colors.grey),
 
+      ),
+      drawerTheme: DrawerThemeData(
+        backgroundColor: AppColors.bg
+      ),
       scaffoldBackgroundColor: AppColors.bg,
-
-      elevatedButtonTheme: ElevatedButtonThemeData(
-        style: ElevatedButton.styleFrom(
-          backgroundColor: AppColors.primary,
-          foregroundColor: AppColors.secondary,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(8),
-          ),
-        ),
-
-      ),);
+    );
 
     return MultiProvider(
       providers: rootProviders,

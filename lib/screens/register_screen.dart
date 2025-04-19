@@ -146,7 +146,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
     });
 
     try {
-      final authService = Provider.of<AuthService>(context, listen: false);
+      final authService = context.read<AuthService>();
       final username = _usernameController.text.trim();
       final email = _emailController.text.trim();
       final password = _passwordController.text;

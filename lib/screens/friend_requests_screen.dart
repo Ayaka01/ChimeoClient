@@ -180,10 +180,7 @@ class FriendRequestsScreenState extends State<FriendRequestsScreen>
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.white,
       appBar: AppBar(
-        backgroundColor: Colors.white,
-        elevation: 0,
         title: Text('Solicitudes de amistad'),
       ),
       body: Column(
@@ -240,7 +237,7 @@ class FriendRequestsScreenState extends State<FriendRequestsScreen>
           SizedBox(height: 16),
           Text(
             'No tienes solicitudes pendientes',
-            style: TextStyle(fontSize: 16, color: Colors.grey),
+            style: Theme.of(context).textTheme.bodyMedium,
             textAlign: TextAlign.center,
           ),
         ],
@@ -318,7 +315,7 @@ class FriendRequestsScreenState extends State<FriendRequestsScreen>
           SizedBox(height: 16),
           Text(
             'No has enviado ninguna solicitud',
-            style: TextStyle(fontSize: 16, color: Colors.grey),
+            style: Theme.of(context).textTheme.bodyMedium,
             textAlign: TextAlign.center,
           ),
         ],

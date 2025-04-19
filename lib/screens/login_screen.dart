@@ -56,7 +56,7 @@ class _LoginScreenState extends State<LoginScreen> {
                   Column(
                     children: [
                       const SizedBox(height: 60),
-                      _buildHeader(),
+                      _buildHeader(context),
                       const SizedBox(height: 40),
                       _buildEmailField(),
                       const SizedBox(height: 16),
@@ -76,16 +76,12 @@ class _LoginScreenState extends State<LoginScreen> {
     );
   }
 
-  Widget _buildHeader() {
-    return const Column(
+  Widget _buildHeader(context) {
+    return Column(
       children: [
         Text(
           '¡Bienvenido a Chimeo!',
-          style: TextStyle(
-            fontSize: 24,
-            fontWeight: FontWeight.bold,
-            color: Color(0xFF1E1E1E),
-          ),
+          style: Theme.of(context).textTheme.titleLarge,
         ),
         SizedBox(height: 8),
         Text(
@@ -177,7 +173,7 @@ class _LoginScreenState extends State<LoginScreen> {
     });
 
     try {
-      final authService = Provider.of<AuthService>(context, listen: false);
+      final authService = context.read<AuthService>();
       final email = _emailController.text.trim();
       final password = _passwordController.text;
 

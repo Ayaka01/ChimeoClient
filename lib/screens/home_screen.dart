@@ -14,7 +14,6 @@ import 'login_screen.dart';
 import 'friend_requests_screen.dart';
 import 'search_users_screen.dart';
 import 'user_profile_screen.dart';
-import 'message_search_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -150,7 +149,6 @@ class _HomeScreenState extends State<HomeScreen>
     }
 
     return Scaffold(
-      backgroundColor: Colors.white,
       appBar: _buildAppBar(),
       drawer: _buildNavigationDrawer(),
       body: Column(
@@ -253,7 +251,7 @@ class _HomeScreenState extends State<HomeScreen>
           SizedBox(height: 16),
           Text(
             'No tienes conversaciones activas',
-            style: TextStyle(fontSize: 16, color: Colors.grey),
+            style: Theme.of(context).textTheme.bodyMedium,
           ),
           SizedBox(height: 8),
           Text(
@@ -449,7 +447,7 @@ class _HomeScreenState extends State<HomeScreen>
           SizedBox(height: 16),
           Text(
             'No tienes amigos añadidos',
-            style: TextStyle(fontSize: 16, color: Colors.grey),
+            style: Theme.of(context).textTheme.bodyMedium,
           ),
           SizedBox(height: 8),
           Text(
@@ -499,7 +497,6 @@ class _HomeScreenState extends State<HomeScreen>
 
   Widget _buildNavigationDrawer() {
     return Drawer(
-      backgroundColor: Colors.white,
       child: ListView(
         padding: EdgeInsets.zero,
         children: [
