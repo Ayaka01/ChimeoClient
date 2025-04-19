@@ -60,6 +60,8 @@ class MyApp extends StatelessWidget {
         centerTitle: true,
       ),
 
+      scaffoldBackgroundColor: AppColors.bg,
+
       elevatedButtonTheme: ElevatedButtonThemeData(
         style: ElevatedButton.styleFrom(
           backgroundColor: AppColors.primary,
