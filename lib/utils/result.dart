@@ -1,8 +1,8 @@
 /// A class representing the result of an operation,
-/// which can be either a success with a value or a failure with an error.
+/// which can be either a success with a value or a failure with an Exception.
 class Result<T> {
   final T? _value;
-  final dynamic _error;
+  final Exception? _error;
   final bool _isSuccess;
 
   /// Creates a successful result with a value.
@@ -12,33 +12,31 @@ class Result<T> {
         _isSuccess = true;
 
   /// Creates a failure result with an error.
-  Result.failure(dynamic error)
+  Result.failure(Exception error)
       : _value = null,
         _error = error,
         _isSuccess = false;
 
-  /// Returns true if the result is a success.
   bool get isSuccess => _isSuccess;
 
-  /// Returns true if the result is a failure.
   bool get isFailure => !_isSuccess;
 
   /// Gets the value if the result is a success.
-  /// Throws an exception if the result is a failure.
+  /// Throws an StateError if the result is a failure.
   T get value {
     if (isFailure) {
-      throw Exception('Cannot get value from a failure result');
+      throw StateError('Cannot get value from a failure result');
     }
     return _value as T;
   }
 
-  /// Gets the error if the result is a failure.
-  /// Throws an exception if the result is a success.
-  dynamic get error {
+  /// Gets the Exception if the result is a failure.
+  /// Throws an StateError if the result is a success.
+  Exception get error {
     if (isSuccess) {
-      throw Exception('Cannot get error from a success result');
+      throw StateError('Cannot get error from a success result');
     }
-    return _error;
+    return _error!;
   }
 
   /// Maps the value of a successful result using the provided function.
@@ -55,7 +53,7 @@ class Result<T> {
   /// Handles both success and failure cases with callback functions.
   R fold<R>(
     R Function(T) onSuccess,
-    R Function(dynamic) onFailure,
+    R Function(Exception) onFailure,
   ) {
     if (isSuccess) {
       return onSuccess(value);
@@ -72,7 +70,7 @@ class Result<T> {
   }
   
   /// Perform an action on the error if the result is a failure.
-  void onFailure(void Function(dynamic) action) {
+  void onFailure(void Function(Exception) action) {
     if (isFailure) {
       action(error);
     }
