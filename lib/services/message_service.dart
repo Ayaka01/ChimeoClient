@@ -387,19 +387,13 @@ class MessageService with ChangeNotifier {
           'is_typing': isTyping
         }
       }));
-      
-      // If typing, set a timer to automatically turn it off after 3 seconds
-      if (isTyping) {
-        _typingTimers[recipientId] = Timer(Duration(seconds: 3), () {
-          sendTypingIndicator(recipientId, false);
-        });
-      }
+
     } catch (e) {
       _logger.e('Error sending typing indicator', error: e, tag: 'MessageService');
     }
   }
 
-  // Send a message with optimistic updates
+  // TODO: MOVE TO REPOSITORY
   Future<MessageModel?> sendMessage(String recipientId, String text) async {
     // Generate a temporary ID for optimistic update
     final tempId = 'temp_${_uuid.v4()}';
@@ -428,10 +422,7 @@ class MessageService with ChangeNotifier {
     _conversations[recipientId]!.addMessage(tempMessage);
     notifyListeners();
     await _saveConversations();
-    
-    // Clear any typing indicator
-    sendTypingIndicator(recipientId, false);
-    
+
     // If offline, queue the message and return the temp message
     if (!_isOnline) {
       _logger.i('Device offline, queueing message to $recipientId', tag: 'MessageService');
@@ -540,7 +531,7 @@ class MessageService with ChangeNotifier {
     }
   }
 
-  // Mark a message as delivered
+  // TODO: REMOVE FROM HERE. FUNCTIONALITY SHOULD BE IN REPOSITORY
   Future<bool> markMessageAsDelivered(String messageId) async {
     try {
       // Mark on server
@@ -565,7 +556,7 @@ class MessageService with ChangeNotifier {
     }
   }
 
-  // Get all pending messages from server
+  // TODO: REMOVE FROM HERE. FUNCTIONALITY SHOULD BE IN REPOSITORY
   Future<List<MessageModel>> getPendingMessages() async {
     try {
       final response = await http.get(
