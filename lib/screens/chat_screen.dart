@@ -23,10 +23,10 @@ class ChatScreen extends StatefulWidget {
   });
 
   @override
-  ChatScreenState createState() => ChatScreenState();
+  State<ChatScreen> createState() => _ChatScreenState();
 }
 
-class ChatScreenState extends State<ChatScreen> {
+class _ChatScreenState extends State<ChatScreen> {
   final TextEditingController _messageController = TextEditingController();
   final FocusNode _messageFocusNode = FocusNode();
   late MessageService _messageService;
@@ -43,9 +43,9 @@ class ChatScreenState extends State<ChatScreen> {
   void initState() {
     super.initState();
     _scrollController = ScrollController();
-    _authService = Provider.of<AuthService>(context, listen: false);
-    _messageService = Provider.of<MessageService>(context, listen: false);
-    _userService = Provider.of<UserService>(context, listen: false);
+    _authService = context.read<AuthService>();
+    _messageService = context.read<MessageService>();
+    _userService = context.read<UserService>();
 
     // Get or create the conversation
     _conversation = _messageService.getOrCreateConversation(widget.friend);
@@ -55,9 +55,6 @@ class ChatScreenState extends State<ChatScreen> {
     
     // Setup focus node 
     _messageFocusNode.addListener(_onFocusChange);
-    
-    // Setup controller listener (removed typing detection)
-    // _messageController.addListener(_onTextChange); // Removed
 
     // Listen for new messages
     _messageService.messagesStream.listen((message) {
@@ -90,18 +87,6 @@ class ChatScreenState extends State<ChatScreen> {
     _messageService.deliveryStream.listen((messageId) {
       setState(() {});
     });
-    
-    // Listen for typing indicators - Removed
-    /*
-    _messageService.typingStream.listen((data) {
-      final username = data['username'] as String;
-      
-      // Only update if it's about our current friend
-      if (username == widget.friend.username) {
-        setState(() {});
-      }
-    });
-    */
     
     // If there's a highlighted message, scroll to it after build
     if (_highlightedMessageId != null) {
@@ -137,26 +122,6 @@ class ChatScreenState extends State<ChatScreen> {
       _scrollToBottom();
     }
   }
-
-  // Removed _onTextChange method for typing indicator
-  /*
-  void _onTextChange() {
-    // Send typing indicator when user starts typing
-    if (_messageController.text.isNotEmpty && !_isTyping) {
-      _isTyping = true;
-      _messageService.sendTypingIndicator(widget.friend.username, true);
-    }
-
-    // Reset typing timer
-    _typingTimer?.cancel();
-    _typingTimer = Timer(Duration(seconds: 3), () {
-      if (_isTyping) {
-        _isTyping = false;
-        _messageService.sendTypingIndicator(widget.friend.username, false);
-      }
-    });
-  }
-  */
   
   void _scrollToHighlightedMessage() {
     if (_highlightedMessageId == null) return;
@@ -206,15 +171,10 @@ class ChatScreenState extends State<ChatScreen> {
 
   @override
   void dispose() {
-    // _messageController.removeListener(_onTextChange); // Removed
     _messageController.dispose();
     _messageFocusNode.removeListener(_onFocusChange);
     _messageFocusNode.dispose();
     _scrollController.dispose();
-    // _typingTimer?.cancel(); // Removed
-
-    // Ensure typing indicator is off when leaving - Removed
-    // _messageService.sendTypingIndicator(widget.friend.username, false);
     
     super.dispose();
   }
@@ -230,11 +190,6 @@ class ChatScreenState extends State<ChatScreen> {
     try {
       // Clear text field before sending to avoid duplicate send
       _messageController.clear();
-
-      // Reset typing indicator - Removed
-      // _isTyping = false;
-      // _typingTimer?.cancel();
-      // _messageService.sendTypingIndicator(widget.friend.username, false);
 
       final message = await _messageService.sendMessage(
         widget.friend.username,

@@ -37,9 +37,9 @@ class _HomeScreenState extends State<HomeScreen>
   void initState() {
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
-    _authService = Provider.of<AuthService>(context, listen: false);
-    _userService = Provider.of<UserService>(context, listen: false);
-    _messageService = Provider.of<MessageService>(context, listen: false);
+    _authService = context.read<AuthService>();
+    _userService = context.read<UserService>();
+    _messageService = context.read<MessageService>();
 
     _loadFriends();
 
@@ -50,13 +50,7 @@ class _HomeScreenState extends State<HomeScreen>
         setState(() {});
       }
     });
-    
-    // Listen for typing indicators
-    _messageService.typingStream.listen((data) {
-      if (mounted) {
-        setState(() {});
-      }
-    });
+
   }
 
   @override
@@ -84,7 +78,6 @@ class _HomeScreenState extends State<HomeScreen>
     });
   }
 
-  // Show confirmation dialog before signing out from drawer
   void _signOut() async {
     // Show confirmation dialog
     final confirm = await showDialog<bool>(
@@ -113,9 +106,7 @@ class _HomeScreenState extends State<HomeScreen>
 
     // Proceed only if the user confirmed
     if (confirm == true) {
-      // Store mounted state before async operation
-      // (isLoading state not needed here as it's handled in ProfileScreen)
-      final isWidgetMounted = mounted; 
+      final isWidgetMounted = mounted;
 
       try {
         await _authService.signOut(context);
@@ -129,8 +120,7 @@ class _HomeScreenState extends State<HomeScreen>
           );
         }
       } catch (e) {
-         // Handle potential errors during sign out, though ProfileScreen might show its own
-         if (isWidgetMounted && mounted) { 
+         if (isWidgetMounted && mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
                 content: Text('Error al cerrar sesión: $e'),
@@ -154,7 +144,7 @@ class _HomeScreenState extends State<HomeScreen>
       body: Column(
         children: [
           Theme(
-            data: Theme.of(context).copyWith(splashColor: AppColors.primary), // Yellow color
+            data: Theme.of(context).copyWith(splashColor: AppColors.primary),
             child: TabBar(
               controller: _tabController,
               tabs: [
@@ -241,7 +231,6 @@ class _HomeScreenState extends State<HomeScreen>
     return sortedList;
   }
 
-  // Builds the view shown when there are no conversations
   Widget _buildEmptyConversationsView() {
     return Center(
       child: Column(
@@ -291,7 +280,6 @@ class _HomeScreenState extends State<HomeScreen>
     );
   }
 
-  // Builds the title row for the conversation tile
   Widget _buildConversationTitleRow(UserModel friend, MessageModel? lastMessage) {
     return Row(
       children: [
@@ -313,14 +301,13 @@ class _HomeScreenState extends State<HomeScreen>
     );
   }
 
-  // Builds the subtitle section for the conversation tile
   Widget _buildConversationSubtitle(
     ConversationModel conversation, 
     MessageModel? lastMessage, 
     UserModel friend
   ) {
-    // Access typing status directly from the conversation model
-    bool isTyping = conversation.isTyping; 
+
+    bool isTyping = conversation.isTyping;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -459,7 +446,6 @@ class _HomeScreenState extends State<HomeScreen>
     );
   }
 
-  // Builds a single list tile for the friends list
   Widget _buildFriendListTile(UserModel friend) {
     return ListTile(
       leading: UserAvatar(
@@ -509,13 +495,11 @@ class _HomeScreenState extends State<HomeScreen>
     );
   }
 
-  // Builds the header for the navigation drawer
   Widget _buildDrawerHeader() {
     final currentUser = _authService.user;
     if (currentUser == null) {
       return const SizedBox.shrink(); 
     }
-    // Replace UserAccountsDrawerHeader with a custom Container
     return Container(
       padding: const EdgeInsets.fromLTRB(16.0, 40.0, 16.0, 20.0), // Adjust top padding (consider safe area)
       child: Column(
