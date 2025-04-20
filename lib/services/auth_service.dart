@@ -1,4 +1,3 @@
-// lib/services/auth_service.dart
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -9,6 +8,10 @@ import '../utils/logger.dart';
 import 'package:provider/provider.dart';
 import '../services/message_service.dart';
 import 'package:flutter/material.dart';
+
+// Keys for storing auth data in SharedPreferences
+const String _tokenKey = 'auth_token';
+const String _userDataKey = 'user_data';
 
 class AuthService with ChangeNotifier {
   UserModel? _user;
@@ -27,11 +30,14 @@ class AuthService with ChangeNotifier {
 
   Future<void> _loadAuthData() async {
     try {
-      final authData = await _authRepo.loadAuthData();
-      
-      if (authData != null && authData.isNotEmpty) {
-        _token = authData['token'];
-        _user = authData['user'] as UserModel;
+      // Directly load from SharedPreferences
+      final prefs = await SharedPreferences.getInstance();
+      final token = prefs.getString(_tokenKey);
+      final userDataString = prefs.getString(_userDataKey);
+
+      if (token != null && userDataString != null) {
+        _token = token;
+        _user = UserModel.fromJson(json.decode(userDataString));
         notifyListeners();
       }
     } catch (e) {
@@ -43,8 +49,9 @@ class AuthService with ChangeNotifier {
     final prefs = await SharedPreferences.getInstance();
 
     if (_user != null && _token != null) {
-      await prefs.setString('auth_token', _token!);
-      await prefs.setString('user_data', json.encode(_user!.toJson()));
+      // Use the defined keys
+      await prefs.setString(_tokenKey, _token!);
+      await prefs.setString(_userDataKey, json.encode(_user!.toJson()));
     }
   }
 
@@ -108,8 +115,11 @@ class AuthService with ChangeNotifier {
 
   Future<bool> signOut(BuildContext context) async {
     try {
-      await _authRepo.clearAuthData();
-      
+      // Directly clear SharedPreferences
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove(_tokenKey);
+      await prefs.remove(_userDataKey);
+
       _token = null;
       _user = null;
       
