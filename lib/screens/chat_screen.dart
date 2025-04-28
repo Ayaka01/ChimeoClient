@@ -99,21 +99,7 @@ class _ChatScreenState extends State<ChatScreen> {
         _scrollToBottom();
       });
     }
-    
-    // Get friend status update
-    _loadFriendData();
-  }
-  
-  void _loadFriendData() async {
-    try {
-      final friend = await _userService.getUserProfile(widget.friend.username);
-      if (friend != null && mounted) {
-        _messageService.getOrCreateConversation(friend);
-        setState(() {});
-      }
-    } catch (e) {
-      _logger.e('Error loading friend data', error: e, tag: 'ChatScreen');
-    }
+
   }
   
   void _onFocusChange() {
@@ -563,7 +549,6 @@ class _ChatScreenState extends State<ChatScreen> {
               padding: const EdgeInsets.only(right: 8.0, bottom: 0), // Align with bottom of bubble
               child: UserAvatar(
                 displayName: widget.friend.displayName,
-                avatarUrl: widget.friend.avatarUrl,
                 size: 28,
               ),
             ),
@@ -677,7 +662,7 @@ class _ChatScreenState extends State<ChatScreen> {
         color: Theme.of(context).cardColor, // Use theme card color
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.05), // Softer shadow
+            color: Colors.black.withAlpha((255 * 0.05).round()), // Replaced withOpacity
             blurRadius: 8,
             offset: Offset(0, -2),
           ),

@@ -9,11 +9,13 @@ import '../models/user_model.dart';
 import '../models/message_model.dart';
 import '../models/conversation_model.dart';
 import '../components/user_avatar.dart';
+import '../components/error_display.dart';
 import 'chat_screen.dart';
 import 'login_screen.dart';
 import 'friend_requests_screen.dart';
 import 'search_users_screen.dart';
 import 'user_profile_screen.dart';
+import '../utils/logger.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -30,8 +32,10 @@ class _HomeScreenState extends State<HomeScreen>
   late MessageService _messageService;
   List<UserModel> _friends = [];
   bool _isLoadingFriends = true;
+  String? _friendsError;
   
   final TextEditingController _searchController = TextEditingController();
+  final Logger _logger = Logger();
   
   @override
   void initState() {
@@ -43,9 +47,7 @@ class _HomeScreenState extends State<HomeScreen>
 
     _loadFriends();
 
-    // Listen for new messages
     _messageService.messagesStream.listen((message) {
-      // Refresh the screen when a new message arrives
       if (mounted) {
         setState(() {});
       }
@@ -63,19 +65,29 @@ class _HomeScreenState extends State<HomeScreen>
   Future<void> _loadFriends() async {
     setState(() {
       _isLoadingFriends = true;
+      _friendsError = null;
     });
 
-    final friends = await _userService.getFriends();
+    try {
+      final friends = await _userService.getFriends();
 
-    // Ensure conversations exist for all friends
-    for (var friend in friends) {
-      _messageService.getOrCreateConversation(friend);
+      // Ensure conversations exist for all friends
+      for (var friend in friends) {
+        _messageService.getOrCreateConversation(friend);
+      }
+
+      if (!mounted) return;
+      setState(() {
+        _friends = friends;
+        _isLoadingFriends = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _isLoadingFriends = false;
+        _friendsError = "Error al cargar amigos";
+      });
     }
-
-    setState(() {
-      _friends = friends;
-      _isLoadingFriends = false;
-    });
   }
 
   void _signOut() async {
@@ -107,6 +119,7 @@ class _HomeScreenState extends State<HomeScreen>
     // Proceed only if the user confirmed
     if (confirm == true) {
       final isWidgetMounted = mounted;
+      _logger.i('User confirmed sign out', tag: 'HomeScreen');
 
       try {
         await _authService.signOut(context);
@@ -120,6 +133,7 @@ class _HomeScreenState extends State<HomeScreen>
           );
         }
       } catch (e) {
+         _logger.e('Error during sign out process', error: e, tag: 'HomeScreen');
          if (isWidgetMounted && mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
@@ -208,9 +222,6 @@ class _HomeScreenState extends State<HomeScreen>
           orElse: () => UserModel(
             username: friendId,
             displayName: conversation.friendName,
-            avatarUrl: conversation.friendAvatarUrl,
-            lastSeen: DateTime.now(), 
-            status: UserStatus.offline, // Default status
           ),
         );
 
@@ -263,8 +274,6 @@ class _HomeScreenState extends State<HomeScreen>
     return ListTile(
       leading: UserAvatar(
         displayName: friend.displayName,
-        avatarUrl: friend.avatarUrl,
-        status: friend.status,
         size: 50,
       ),
       title: _buildConversationTitleRow(friend, lastMessage),
@@ -306,27 +315,10 @@ class _HomeScreenState extends State<HomeScreen>
     MessageModel? lastMessage, 
     UserModel friend
   ) {
-
-    bool isTyping = conversation.isTyping;
-
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        if (isTyping)
-          Row(
-            children: [
-              Text(
-                'Escribiendo',
-                style: TextStyle(
-                  fontStyle: FontStyle.italic,
-                  color: AppColors.primary,
-                ),
-              ),
-              SizedBox(width: 4),
-              _buildTypingIndicator(),
-            ],
-          )
-        else if (lastMessage != null)
+        if (lastMessage != null)
           _buildLastMessageRow(lastMessage)
         else
           Text('No hay mensajes', style: TextStyle(color: Colors.grey[600])),
@@ -369,45 +361,16 @@ class _HomeScreenState extends State<HomeScreen>
     );
   }
 
-  Widget _buildTypingIndicator() {
-    return SizedBox(
-      width: 20,
-      height: 20,
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-        children: List.generate(
-          3,
-          (index) => _buildDot(index),
-        ),
-      ),
-    );
-  }
-  
-  Widget _buildDot(int index) {
-    return TweenAnimationBuilder(
-      tween: Tween<double>(begin: 0, end: 1),
-      duration: Duration(milliseconds: 300),
-      curve: Interval(index * 0.2, 0.7 + index * 0.1, curve: Curves.easeInOut),
-      builder: (context, double value, child) {
-        // Convert value (0.0-1.0) to alpha (0-255)
-        final int alpha = (value * 255).round();
-        return Container(
-          width: 4,
-          height: 4,
-          decoration: BoxDecoration(
-            color: AppColors.primary.withAlpha(alpha),
-            shape: BoxShape.circle,
-          ),
-        );
-      },
-    );
-  }
-
   Widget _buildFriendsList() {
     if (_isLoadingFriends) {
       return Center(child: CircularProgressIndicator());
     }
-
+    if (_friendsError != null) {
+      return ErrorDisplay(
+        errorMessage: _friendsError!,
+        onRetry: _loadFriends,
+      );
+    }
     if (_friends.isEmpty) {
       return _buildEmptyFriendsView();
     }
@@ -450,26 +413,10 @@ class _HomeScreenState extends State<HomeScreen>
     return ListTile(
       leading: UserAvatar(
         displayName: friend.displayName,
-        avatarUrl: friend.avatarUrl,
-        status: friend.status,
         size: 50,
       ),
       title: Text(friend.displayName),
       subtitle: Text('@${friend.username}'),
-      trailing: friend.statusMessage != null
-          ? SizedBox(
-              width: 100, // Constrain width to prevent overflow
-              child: Text(
-                friend.statusMessage!,
-                style: TextStyle(
-                  fontStyle: FontStyle.italic,
-                  color: Colors.grey[600],
-                ),
-                overflow: TextOverflow.ellipsis,
-                maxLines: 1,
-              ),
-            )
-          : null,
       onTap: () {
         Navigator.push(
           context,
@@ -507,7 +454,6 @@ class _HomeScreenState extends State<HomeScreen>
         children: [
           UserAvatar(
             displayName: currentUser.displayName,
-            avatarUrl: currentUser.avatarUrl, 
             size: 60,
             onTap: () {
               Navigator.pop(context); 
@@ -516,9 +462,6 @@ class _HomeScreenState extends State<HomeScreen>
                 MaterialPageRoute(builder: (context) => UserProfileScreen()),
               );
             },
-            // Optional: Add specific background/text color if needed for header
-            // backgroundColor: AppColors.primary.withOpacity(0.2),
-            // textColor: AppColors.primary,
           ),
           SizedBox(height: 12),
           Text(

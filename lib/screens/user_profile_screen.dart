@@ -170,9 +170,8 @@ class UserProfileScreenState extends State<UserProfileScreen> {
                   children: [
                     UserAvatar(
                       displayName: currentUser.displayName,
-                      avatarUrl: currentUser.avatarUrl,
                       size: 80,
-                      backgroundColor: AppColors.primary.withOpacity(0.1),
+                      backgroundColor: AppColors.primary.withAlpha((255 * 0.05).round()),
                       textColor: AppColors.primary,
                     ),
 

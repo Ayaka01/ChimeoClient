@@ -8,6 +8,9 @@ import 'services/local_storage_service.dart';
 import 'screens/splash_screen.dart';
 import 'constants/colors.dart';
 import 'config/app_config.dart';
+import 'repositories/auth_repository.dart';
+import 'repositories/message_repository.dart';
+import 'repositories/user_repository.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -19,38 +22,53 @@ class MyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    SingleChildWidget localStorageServiceProvider = Provider(create: (context) => LocalStorageService());
-    SingleChildWidget authServiceProvider =  ChangeNotifierProvider(create: (context) => AuthService());
+    // These repositories will be used for API requests
+    final authRepository = AuthRepository();
+    final messageRepository = MessageRepository();
+    final userRepository = UserRepository();
 
-    SingleChildWidget userServiceProvider = ProxyProvider<AuthService, UserService>(
-      update: (context, auth, previous) => UserService(auth),
+    // To store messages locally
+    SingleChildWidget localStorageServiceProvider = Provider(
+      create: (context) => LocalStorageService(),
     );
 
+    // To handle authentication
+    SingleChildWidget authServiceProvider = ChangeNotifierProvider(
+      create: (context) => AuthService(authRepository),
+    );
+
+    // To handle friendships
+    SingleChildWidget userServiceProvider =
+        ProxyProvider<AuthService, UserService>(
+          update: (context, auth, previous) => UserService(auth, userRepository),
+        );
+
+    // To handle messages
     SingleChildWidget messageServiceProvider = ChangeNotifierProxyProvider2<
-        AuthService,
-        LocalStorageService,
-        MessageService
+      AuthService,
+      LocalStorageService,
+      MessageService
     >(
-        create:
-            (context) => MessageService(
-          Provider.of<AuthService>(context, listen: false),
-          Provider.of<LocalStorageService>(context, listen: false),
-        ),
-
-        update:
-            (context, auth, storage, previous) =>
-        previous!..updateServices(auth, storage),
-
+      create:
+          (context) => MessageService(
+            context.read<AuthService>(),
+            context.read<LocalStorageService>(),
+            messageRepository,
+          ),
+      update:
+          (context, auth, storage, previous) =>
+              previous!..updateServices(auth, storage, messageRepository),
     );
 
-
+    // These services will be available
     List<SingleChildWidget> rootProviders = [
       localStorageServiceProvider,
       authServiceProvider,
       userServiceProvider,
-      messageServiceProvider
+      messageServiceProvider,
     ];
 
+    // General styling
     ThemeData baseTheme = ThemeData(
       visualDensity: VisualDensity.adaptivePlatformDensity,
 
@@ -59,14 +77,17 @@ class MyApp extends StatelessWidget {
         foregroundColor: AppColors.secondary,
         centerTitle: true,
       ),
-      textTheme: TextTheme(
-        titleLarge: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: AppColors.secondary),
-        bodyMedium: TextStyle(fontSize: 16, color: Colors.grey),
 
+      textTheme: TextTheme(
+        titleLarge: TextStyle(
+          fontSize: 24,
+          fontWeight: FontWeight.bold,
+          color: AppColors.secondary,
+        ),
+        bodyMedium: TextStyle(fontSize: 16, color: Colors.grey),
       ),
-      drawerTheme: DrawerThemeData(
-        backgroundColor: AppColors.bg
-      ),
+
+      drawerTheme: DrawerThemeData(backgroundColor: AppColors.bg),
       scaffoldBackgroundColor: AppColors.bg,
     );
 

@@ -6,8 +6,8 @@ import '../services/auth_service.dart';
 import '../services/message_service.dart';
 import 'home_screen.dart';
 import 'register_screen.dart';
-import '../components/custom_text_field.dart';
 import '../components/custom_button.dart';
+import '../components/input_decorations.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -17,23 +17,45 @@ class LoginScreen extends StatefulWidget {
 }
 
 class _LoginScreenState extends State<LoginScreen> {
+  // Unique reference to the form. Used to validate login form
+  final _formKey = GlobalKey<FormState>();
+
   late final TextEditingController _emailController;
   late final TextEditingController _passwordController;
+  
   bool _isLoading = false;
   bool _obscurePassword = true;
+
+  // To show error messages on the form
+  String? _apiError;
 
   @override
   void initState() {
     super.initState();
     _emailController = TextEditingController();
     _passwordController = TextEditingController();
+
+    // Add listeners to clear general API error on input
+    _emailController.addListener(_clearApiError);
+    _passwordController.addListener(_clearApiError);
   }
 
   @override
   void dispose() {
+    super.dispose();
+
+    _emailController.removeListener(_clearApiError);
+    _passwordController.removeListener(_clearApiError);
+
     _emailController.dispose();
     _passwordController.dispose();
-    super.dispose();
+
+  }
+
+  void _clearApiError() {
+      setState(() {
+        _apiError = null;
+      });
   }
 
   @override
@@ -50,24 +72,37 @@ class _LoginScreenState extends State<LoginScreen> {
             ),
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 30.0),
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Column(
-                    children: [
-                      const SizedBox(height: 60),
-                      _buildHeader(context),
-                      const SizedBox(height: 40),
-                      _buildEmailField(),
-                      const SizedBox(height: 16),
-                      _buildPasswordField(),
-                      const SizedBox(height: 32),
-                      _buildLoginButton(),
-                      const SizedBox(height: 64),
-                      _buildRegistrationPrompt(context),
-                    ],
-                  ),
-                ],
+              child: Form(
+                key: _formKey,
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Column(
+                      children: [
+                        const SizedBox(height: 60),
+                        _buildHeader(context),
+                        const SizedBox(height: 40),
+                        _buildEmailField(),
+                        const SizedBox(height: 16),
+                        _buildPasswordField(),
+                        const SizedBox(height: 16), // Space before error
+                        // Conditionally display the general API error
+                        if (_apiError != null)
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: 16.0),
+                            child: Text(
+                              _apiError!,
+                              style: const TextStyle(color: Colors.red, fontSize: 12),
+                              textAlign: TextAlign.center,
+                            ),
+                          ),
+                        _buildLoginButton(),
+                        const SizedBox(height: 64),
+                        _buildRegistrationPrompt(context),
+                      ],
+                    ),
+                  ],
+                ),
               ),
             ),
           ),
@@ -93,22 +128,48 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Widget _buildEmailField() {
-    return CustomTextField(
-      label: 'Email',
+    return TextFormField(
       controller: _emailController,
       keyboardType: TextInputType.emailAddress,
+      decoration: buildModernInputDecoration(
+        labelText: 'Email',
+      ),
+      validator: (value) {
+        if (value == null || value.isEmpty) {
+          return 'Por favor, introduce tu email';
+        }
+        if (!RegExp(r"^[a-zA-Z0-9.]+@[a-zA-Z0-9]+\.[a-zA-Z]+").hasMatch(value)) {
+           return 'Introduce un email válido';
+        }
+        return null;
+      },
     );
   }
 
   Widget _buildPasswordField() {
-    return CustomTextField(
-      label: 'Contraseña',
+    return TextFormField(
       controller: _passwordController,
       obscureText: _obscurePassword,
-      onToggleVisibility: () {
-        setState(() {
-          _obscurePassword = !_obscurePassword;
-        });
+      decoration: buildModernInputDecoration(
+        labelText: 'Contraseña',
+        suffixIcon: IconButton(
+          icon: Icon(
+            _obscurePassword ? Icons.visibility_off : Icons.visibility,
+            color: Colors.grey,
+            size: 20,
+          ),
+          onPressed: () {
+            setState(() {
+              _obscurePassword = !_obscurePassword;
+            });
+          },
+        ),
+      ),
+      validator: (value) {
+        if (value == null || value.isEmpty) {
+          return 'Por favor, introduce tu contraseña';
+        }
+        return null;
       },
     );
   }
@@ -152,19 +213,10 @@ class _LoginScreenState extends State<LoginScreen> {
     );
   }
 
-  void _showErrorSnackBar(String message) {
-    if (!mounted) return; // Check mount status
-    setState(() => _isLoading = false); // Set loading state
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message)), // Show snackbar
-    );
-  }
-
   Future<void> _login() async {
-    if (_emailController.text.isEmpty || _passwordController.text.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Por favor, introduce email y contraseña')),
-      );
+    setState(() => _apiError = null);
+
+    if (_formKey.currentState?.validate() != true) {
       return;
     }
 
@@ -184,11 +236,7 @@ class _LoginScreenState extends State<LoginScreen> {
         _isLoading = false;
       });
 
-      // Connect to WebSocket
-      final messageService = Provider.of<MessageService>(
-        context,
-        listen: false,
-      );
+      final messageService = context.read<MessageService>();
       messageService.connectToWebSocket();
 
       Navigator.pushReplacement(
@@ -196,11 +244,15 @@ class _LoginScreenState extends State<LoginScreen> {
         MaterialPageRoute(builder: (context) => HomeScreen()),
       );
     } on InvalidCredentialsException {
-        _showErrorSnackBar('Email o contraseña incorrectos.');
-    } on InvalidEmailFormatException {
-        _showErrorSnackBar('Por favor, introduce un email válido.');
+        setState(() {
+          _apiError = 'Email o contraseña incorrectos.';
+          _isLoading = false;
+        });
     } catch (e) {
-        _showErrorSnackBar('Error al iniciar sesión: ${e.toString()}');
+        setState(() {
+          _apiError = 'Ocurrió un error inesperado. Inténtalo de nuevo.'; 
+          _isLoading = false;
+        });
     }
   }
 }

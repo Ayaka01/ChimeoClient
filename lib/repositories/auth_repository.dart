@@ -6,15 +6,18 @@ import 'package:simple_messenger/utils/exceptions.dart';
 import '../utils/result.dart';
 
 class AuthRepository extends BaseRepository {
-  static final AuthRepository _instance = AuthRepository._singletonInstance();
+  static final AuthRepository _instance = AuthRepository._internal();
 
   // Private constructor
-  AuthRepository._singletonInstance();
+  AuthRepository._internal();
 
   // Factory constructor to return the singleton instance
   factory AuthRepository() => _instance;
 
-  Future<Result<Map<String, dynamic>>> signIn(String email, String password) async {
+  Future<Result<Map<String, dynamic>>> signIn(
+    String email,
+    String password,
+  ) async {
     return await executeSafe<Map<String, dynamic>>(() async {
       final response = await http.post(
         Uri.parse('${ApiConfig.baseUrl}${ApiConfig.authPath}/login'),
@@ -22,25 +25,28 @@ class AuthRepository extends BaseRepository {
         body: json.encode({'email': email, 'password': password}),
       );
 
-      if (response.statusCode == 200) {
-        return json.decode(response.body) as Map<String, dynamic>;
-      } else if (response.statusCode == 422) {
+      if (response.statusCode == 422) {
         throw InvalidEmailFormatException();
-      } else if (response.statusCode == 401) {
-        throw InvalidCredentialsException();
-      } else {
-        throw LoginException('Login failed. Status: ${response.statusCode} ${response.reasonPhrase}');
       }
+
+      if (response.statusCode == 401) {
+        throw InvalidCredentialsException();
+      }
+
+      if (response.statusCode == 500) {
+        throw InternalServerErrorException();
+      }
+
+      return json.decode(response.body) as Map<String, dynamic>;
     });
   }
 
-
   Future<Result<Map<String, dynamic>>> signUp(
-      String username,
-      String email,
-      String password,
-      String displayName,
-      ) async {
+    String username,
+    String email,
+    String password,
+    String displayName,
+  ) async {
     return await executeSafe<Map<String, dynamic>>(() async {
       final response = await http.post(
         Uri.parse('${ApiConfig.baseUrl}${ApiConfig.authPath}/register'),
@@ -53,33 +59,36 @@ class AuthRepository extends BaseRepository {
         }),
       );
 
-      if (response.statusCode == 201) {
-        return json.decode(response.body) as Map<String, dynamic>;
-      } else if (response.statusCode == 422) {
+      if (response.statusCode == 422) {
         throw InvalidEmailFormatException();
-      } else if (response.statusCode == 400) {
-        final error = json.decode(response.body);
-        final detail = error['detail'] as String?;
-
-        if (detail != null) {
-          if (detail.contains("Username must be at least")) {
-            throw UsernameTooShortException();
-          } else if (detail == "Username already taken") {
-            throw UsernameTakenException();
-          } else if (detail == "Email already registered") {
-            throw EmailInUseException();
-          } else if (detail.contains("Password is too weak") ||
-              detail.contains("Password must contain")) {
-            throw PasswordTooWeakException();
-          } else {
-            throw RegistrationException(detail);
-          }
-        } else {
-          throw RegistrationException("Registration failed: Bad Request (Status 400)");
-        }
-      } else {
-        throw RegistrationException('Registration failed. Status: ${response.statusCode} ${response.reasonPhrase}');
       }
+
+      if (response.statusCode == 400) {
+        final error = json.decode(response.body);
+        final detail = error['detail'] as String;
+
+        if (detail.contains("Username must be at least")) {
+          throw UsernameTooShortException();
+        }
+
+        if (detail == "Username already taken") {
+          throw UsernameTakenException();
+        }
+
+        if (detail == "Email already registered") {
+          throw EmailInUseException();
+        }
+
+        if (detail.contains("Password must")) {
+          throw PasswordTooWeakException();
+        }
+      }
+
+      if (response.statusCode == 500) {
+        throw InternalServerErrorException();
+      }
+
+      return json.decode(response.body) as Map<String, dynamic>;
     });
   }
 }

@@ -5,7 +5,6 @@ import '../services/auth_service.dart';
 import '../services/message_service.dart';
 import 'home_screen.dart';
 import 'login_screen.dart';
-import '../config/app_config.dart';
 
 
 class SplashScreen extends StatefulWidget {
@@ -29,8 +28,8 @@ class _SplashScreenState extends State<SplashScreen> {
     await Future.delayed(Duration(seconds: 1));
 
     if (!mounted) return;
-    final authService = Provider.of<AuthService>(context, listen: false);
-    final messageService = Provider.of<MessageService>(context, listen: false);
+    final authService = context.read<AuthService>();
+    final messageService = context.read<MessageService>();
 
     if (authService.isAuthenticated) {
       if (!messageService.isConnected) {
@@ -61,13 +60,11 @@ class _SplashScreenState extends State<SplashScreen> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(Icons.chat_bubble_outline, size: 80, color: AppColors.primary),
-            SizedBox(height: 24),
-            Text(
-              AppConfig.appName,
-              style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+            Image.asset(
+              'assets/images/logo.png',
+              width: 150,
             ),
-            SizedBox(height: 24),
+            SizedBox(height: 48),
             if (_isLoading)
               CircularProgressIndicator(color: AppColors.primary)
           ],

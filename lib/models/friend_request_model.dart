@@ -14,11 +14,20 @@ class FriendRequestModel {
   });
 
   factory FriendRequestModel.fromJson(Map<String, dynamic> json) {
+    // Helper function for safe parsing with logging
+    String _parseField(String key, String defaultValue, Map<String, dynamic> sourceJson) {
+      final value = sourceJson[key];
+      if (value == null) {
+        return defaultValue;
+      }
+      return value.toString();
+    }
+
     return FriendRequestModel(
-      id: json['id'] as String,
-      senderUsername: json['sender_username'] as String,
-      recipientUsername: json['recipient_username'] as String,
-      status: json['status'] as String,
+      id: _parseField('id', 'missing_id', json),
+      senderUsername: _parseField('sender_username', 'unknown_sender', json),
+      recipientUsername: _parseField('recipient_username', 'unknown_recipient', json),
+      status: _parseField('status', 'unknown', json),
     );
   }
 

@@ -1,49 +1,49 @@
 import 'dart:async';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
+import 'package:simple_messenger/utils/exceptions.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 import '../config/api_config.dart';
 import '../models/message_model.dart';
 import 'base_repository.dart';
 import '../utils/result.dart';
+import '../utils/logger.dart';
 
-/// Repository for handling message-related data access
 class MessageRepository extends BaseRepository {
   static final MessageRepository _instance = MessageRepository._internal();
   factory MessageRepository() => _instance;
+  final Logger _logger = Logger();
+
   MessageRepository._internal();
 
+  // Holds the active WebSocket connection if connected. Null otherwise.
   WebSocketChannel? _wsChannel;
   StreamSubscription? _wsSubscription;
 
 
   Future<Result<WebSocketChannel>> connectToWebSocket(String username, String token) async {
+    _logger.i('Attempting WebSocket connection for user: $username', tag: 'MessageRepository');
     if (_wsChannel != null) {
-      print("DEBUG: WebSocket channel reference found. Returning existing one as Success.");
         return Result.success(_wsChannel!);
     }
 
-    print("DEBUG: No active WebSocket channel. Attempting new connection...");
-    final connectionResult = await executeSafe<WebSocketChannel>(() async {
+    // If no connection exists
+    final Result<WebSocketChannel> connectionResult = await executeSafe<WebSocketChannel>(() async {
       final wsUrl = '${ApiConfig.wsUrl}${ApiConfig.messagesPath}/ws/$username';
       final uri = Uri.parse(wsUrl);
       final uriWithAuth = uri.replace(
         queryParameters: {'token': token},
       );
-      print("DEBUG: Connecting to WebSocket at $uriWithAuth ...");
       final channel = WebSocketChannel.connect(uriWithAuth);
-      print("DEBUG: WebSocket connection established via connect().");
       return channel;
     });
 
-    connectionResult.onSuccess((channel) {
-      print("DEBUG: Storing new channel reference and setting up listener.");
+    connectionResult.onSuccess((WebSocketChannel channel) {
       _wsChannel = channel;
       _setupListener();
     });
 
-    connectionResult.onFailure((error) {
-      print("ERROR: Failed to connect WebSocket: $error");
+    connectionResult.onFailure((Exception _) {
       _wsChannel = null;
     });
 
@@ -52,85 +52,61 @@ class MessageRepository extends BaseRepository {
 
   void _setupListener() {
     if (_wsChannel == null) {
-      print("ERROR: _setupListener called but _wsChannel is null.");
+      _logger.w('Cannot setup listener, WebSocket channel is null', tag: 'MessageRepository');
       return;
     }
-    print("DEBUG: Setting up WebSocket stream listener...");
+    _logger.d('Setting up WebSocket listener', tag: 'MessageRepository');
+
     _wsSubscription?.cancel();
     _wsSubscription = _wsChannel!.stream.listen(
           (message) {
-        print("Message received: $message");
+        _logger.d('WebSocket message received: $message', tag: 'MessageRepository');
         // TODO: Implement actual message handling
       },
       onError: (error) {
-        print("WebSocket Error: $error - Connection Lost!");
-        _handleConnectionEnd(isError: true, error: error);
+        _logger.e('WebSocket error - Connection Lost!', error: error, tag: 'MessageRepository');
+        _handleConnectionEnd();
       },
       onDone: () {
-        print("WebSocket Done: Server closed connection.");
-        _handleConnectionEnd(isError: false);
+        _logger.i('WebSocket connection closed by server.', tag: 'MessageRepository');
+        _handleConnectionEnd();
       },
-      cancelOnError: true,
     );
   }
 
-  void _handleConnectionEnd({required bool isError, Object? error}) {
-    print("DEBUG: Cleaning up WebSocket state (isError: $isError)...");
+  void _handleConnectionEnd() {
+    _logger.d('Handling WebSocket connection end', tag: 'MessageRepository');
     _wsSubscription?.cancel();
     _wsSubscription = null;
     _wsChannel = null;
-    // TODO: Optionally notify rest of app about disconnection
   }
 
   void closeWebSocket() {
+    _logger.i('Closing WebSocket connection', tag: 'MessageRepository');
     if (_wsChannel == null) {
-      print("DEBUG: closeWebSocket called but channel is already null.");
       return;
     }
-    print("DEBUG: Initiating client-side WebSocket close...");
-    _wsChannel?.sink.close().catchError((error) {
-      print("WARN: Error while closing WebSocket sink: $error");
-    });
-    _handleConnectionEnd(isError: false);
+    _wsChannel?.sink.close();
+    _handleConnectionEnd();
   }
 
    void sendWebSocketMessage(Map<String, dynamic> data) {
     if (_wsChannel != null) {
-      print("DEBUG: Sending WebSocket message: ${json.encode(data)}");
+      _logger.d('Sending WebSocket message: ${json.encode(data)}', tag: 'MessageRepository');
       try {
         _wsChannel!.sink.add(json.encode(data));
       } catch (e) {
-        print("ERROR: Failed to send message via WebSocket sink: $e");
-        _handleConnectionEnd(isError: true, error: e);
+        _logger.e('Failed to send message via WebSocket sink', error: e, tag: 'MessageRepository');
+        _handleConnectionEnd();
       }
     } else {
-      print("WARN: Tried to send WebSocket message, but channel is null.");
+      _logger.w('Tried to send WebSocket message, but channel is null.', tag: 'MessageRepository');
     }
   }
 
-  Future<Result<MessageModel>> sendMessage(String recipientId, String text, String token) async {
-    print("DEBUG: Sending HTTP message to $recipientId");
-    return await executeSafe<MessageModel>(() async {
-      final response = await http.post(
-        Uri.parse('${ApiConfig.baseUrl}${ApiConfig.messagesPath}/'),
-        headers: {
-          'Authorization': 'Bearer $token',
-          'Content-Type': 'application/json',
-        },
-        body: json.encode({'recipient_username': recipientId, 'text': text}),
-      );
-
-      if (response.statusCode == 200) {
-        return MessageModel.fromJson(json.decode(response.body));
-      } else {
-        // TODO: Implement more specific exceptions based on status code
-        throw Exception('Failed to send message: ${response.statusCode} ${response.reasonPhrase}');
-      }
-    });
-  }
 
   Future<Result<void>> markMessageAsDelivered(String messageId, String token) async {
-    print("DEBUG: Marking message $messageId as delivered (HTTP)");
+    _logger.d('Marking message $messageId as delivered (HTTP)', tag: 'MessageRepository');
     return await executeSafe<void>(() async {
       final response = await http.post(
         Uri.parse('${ApiConfig.baseUrl}${ApiConfig.messagesPath}/delivered/$messageId'),
@@ -141,11 +117,12 @@ class MessageRepository extends BaseRepository {
         // TODO: Implement more specific exceptions based on status code
         throw Exception('Failed to mark message as delivered: ${response.statusCode} ${response.reasonPhrase}');
       }
+      _logger.i('Message $messageId marked as delivered successfully', tag: 'MessageRepository');
     });
   }
 
   Future<Result<List<MessageModel>>> getPendingMessages(String token) async {
-    print("DEBUG: Getting pending messages (HTTP)");
+    _logger.d('Getting pending messages (HTTP)', tag: 'MessageRepository');
     return await executeSafe<List<MessageModel>>(() async {
       final response = await http.get(
         Uri.parse('${ApiConfig.baseUrl}${ApiConfig.messagesPath}/pending'),
@@ -154,11 +131,42 @@ class MessageRepository extends BaseRepository {
 
       if (response.statusCode == 200) {
         final List<dynamic> data = json.decode(response.body);
-        return data.map((json) => MessageModel.fromJson(json)).toList();
+        final messages = data.map((json) => MessageModel.fromJson(json)).toList();
+        _logger.i('Fetched ${messages.length} pending messages successfully', tag: 'MessageRepository');
+        return messages;
       } else {
         // TODO: Implement more specific exceptions based on status code
         throw Exception('Failed to get pending messages: ${response.statusCode} ${response.reasonPhrase}');
       }
+    });
+  }
+
+  Future<Result<MessageModel>> sendMessageViaHttp(String recipientId, String text, String token) async {
+    _logger.d('Sending message to $recipientId via HTTP', tag: 'MessageRepository');
+    return await executeSafe<MessageModel>(() async {
+      final response = await http.post(
+        Uri.parse('${ApiConfig.baseUrl}${ApiConfig.messagesPath}/'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+        body: json.encode({
+          'recipient_id': recipientId,
+          'text': text,
+        }),
+      );
+
+      if(response.statusCode == 422) {
+        throw ValidationDataError("Data Validation Error");
+      }
+
+      if(response.statusCode == 500) {
+        throw InternalServerErrorException();
+      }
+
+      final sentMessage = MessageModel.fromJson(json.decode(response.body));
+      _logger.i('Message sent successfully via HTTP, ID: ${sentMessage.id}', tag: 'MessageRepository');
+      return sentMessage;
     });
   }
 }
