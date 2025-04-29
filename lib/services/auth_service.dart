@@ -64,7 +64,6 @@ class AuthService with ChangeNotifier {
     }
   }
 
-  // Renamed to reflect saving BOTH tokens and user data
   Future<void> _saveTokensAndUserData(String accessToken, String refreshToken, UserModel user) async {
     _logger.d('Saving tokens and user data to storage for user: ${user.username}', tag: 'AuthService');
     try {
@@ -74,12 +73,13 @@ class AuthService with ChangeNotifier {
         key: _secureUserDataKey,
         value: json.encode(user.toJson()),
       );
-      // Update internal state AFTER successful save
+
       _token = accessToken;
       _refreshToken = refreshToken;
       _user = user;
       _logger.i('Tokens and user data saved successfully', tag: 'AuthService');
-      notifyListeners(); // Notify after state is updated
+      notifyListeners();
+
     } catch (e) {
       _logger.e('Failed to save tokens and user data', error: e, tag: 'AuthService');
       // Optionally clear state if save fails?
@@ -106,7 +106,6 @@ class AuthService with ChangeNotifier {
     if (result.isSuccess) {
       final Map<String, dynamic> authData = result.value;
 
-      // Extract both tokens
       final accessToken = authData['access_token'];
       final refreshToken = authData['refresh_token']; 
       final userModel = UserModel(
@@ -140,14 +139,15 @@ class AuthService with ChangeNotifier {
   ) async {
     final loggedEmail = kDebugMode ? email : '[REDACTED]';
     _logger.i('Attempting sign up for username: $username, email: $loggedEmail', tag: 'AuthService');
+
     final Result<Map<String, dynamic>> result = await _authRepo.signUp(username, email, password, displayName);
 
     if (result.isSuccess) {
       final Map<String, dynamic> authData = result.value;
 
-      // Extract both tokens
       final accessToken = authData['access_token'];
       final refreshToken = authData['refresh_token'];
+
       final userModel = UserModel(
         username: authData['username'],
         displayName: authData['display_name'],

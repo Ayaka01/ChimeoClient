@@ -1,10 +1,10 @@
 import 'package:dio/dio.dart';
-import 'package:flutter_secure_storage/flutter_secure_storage.dart'; // For direct token access if needed
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import '../services/auth_service.dart';
 import '../repositories/auth_repository.dart';
-import '../config/api_config.dart'; // To check against auth paths
+import '../config/api_config.dart';
 import '../utils/logger.dart';
-import 'dio_client.dart'; // Import the global dio AND the refresh dio
+import 'dio_client.dart';
 
 class AuthInterceptor extends QueuedInterceptorsWrapper {
   final AuthService authService;
@@ -12,7 +12,6 @@ class AuthInterceptor extends QueuedInterceptorsWrapper {
   final Logger _logger = Logger();
   final FlutterSecureStorage _secureStorage = const FlutterSecureStorage(); // Direct access if needed
 
-  // Lock to prevent multiple token refreshes concurrently
   bool _isRefreshing = false;
 
   AuthInterceptor(this.authService, this.authRepository);
@@ -70,7 +69,7 @@ class AuthInterceptor extends QueuedInterceptorsWrapper {
         if (refreshToken == null) {
           _logger.w('No refresh token found. Triggering logout.', tag: 'AuthInterceptor');
           await _handleRefreshFailure(err, handler); // Handle failure (logs out and rejects)
-          return; // Exit after handling
+          return;
         }
 
         // Make the refresh API call using the AuthRepository, 

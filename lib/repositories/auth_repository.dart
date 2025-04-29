@@ -90,7 +90,7 @@ class AuthRepository {
   ) async {
      try {
         final response = await _dio.post(
-            '${ApiConfig.authPath}/register', // Use relative path
+            '${ApiConfig.authPath}/register',
             data: json.encode({
                 'username': username,
                 'email': email,
@@ -99,8 +99,6 @@ class AuthRepository {
             }),
         );
 
-        // Check for 201 Created specifically
-        // Backend now returns 200 on success, update check? Assuming 200 is okay.
         if (response.statusCode == 200 && response.data is Map<String, dynamic>) {
              return Result.success(response.data as Map<String, dynamic>);
         } else {
