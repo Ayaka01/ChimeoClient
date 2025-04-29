@@ -29,7 +29,7 @@ class SearchUsersScreenState extends State<SearchUsersScreen> {
   @override
   void initState() {
     super.initState();
-    _userService = Provider.of<UserService>(context, listen: false);
+    _userService = context.read<UserService>();
   }
 
   @override

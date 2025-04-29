@@ -24,9 +24,13 @@ class ConversationModel {
       return null;
     }
 
-    // Sort messages by timestamp (newest first)
+    // Sort messages by timestamp (newest first), handle nulls (treat as oldest)
     final sortedMessages = List<MessageModel>.from(messages)
-      ..sort((a, b) => b.timestamp.compareTo(a.timestamp));
+      ..sort((a, b) {
+        final aTime = a.timestamp ?? DateTime.fromMillisecondsSinceEpoch(0);
+        final bTime = b.timestamp ?? DateTime.fromMillisecondsSinceEpoch(0);
+        return bTime.compareTo(aTime); // Newest first
+      });
 
     return sortedMessages.first;
   }
@@ -84,7 +88,8 @@ class ConversationModel {
       'friend_username': friendUsername,
       'friend_name': friendName,
       'messages': messages.map((message) => message.toJson()).toList(),
-      'last_message_time': lastMessage?.timestamp.toIso8601String(),
+      // Use null-aware operator for timestamp as well
+      'last_message_time': lastMessage?.timestamp?.toIso8601String(), 
       'friend_avatar_url': friendAvatarUrl,
       'is_online': isOnline,
     };

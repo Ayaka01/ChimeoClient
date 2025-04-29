@@ -85,8 +85,7 @@ class _LoginScreenState extends State<LoginScreen> {
                         _buildEmailField(),
                         const SizedBox(height: 16),
                         _buildPasswordField(),
-                        const SizedBox(height: 16), // Space before error
-                        // Conditionally display the general API error
+                        const SizedBox(height: 16),
                         if (_apiError != null)
                           Padding(
                             padding: const EdgeInsets.only(bottom: 16.0),
@@ -226,6 +225,8 @@ class _LoginScreenState extends State<LoginScreen> {
 
     try {
       final authService = context.read<AuthService>();
+      final messageService = context.read<MessageService>();
+
       final email = _emailController.text.trim();
       final password = _passwordController.text;
 
@@ -236,18 +237,19 @@ class _LoginScreenState extends State<LoginScreen> {
         _isLoading = false;
       });
 
-      final messageService = context.read<MessageService>();
       messageService.connectToWebSocket();
 
       Navigator.pushReplacement(
         context,
         MaterialPageRoute(builder: (context) => HomeScreen()),
       );
+
     } on InvalidCredentialsException {
         setState(() {
           _apiError = 'Email o contraseña incorrectos.';
           _isLoading = false;
         });
+
     } catch (e) {
         setState(() {
           _apiError = 'Ocurrió un error inesperado. Inténtalo de nuevo.'; 

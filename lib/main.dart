@@ -11,47 +11,79 @@ import 'config/app_config.dart';
 import 'repositories/auth_repository.dart';
 import 'repositories/message_repository.dart';
 import 'repositories/user_repository.dart';
+import 'utils/dio_client.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  runApp(MyApp());
+
+  // --- Initialize dependencies needed for Dio Interceptor --- 
+  // Create repositories (they use the global dio instance internally now)
+  final authRepository = AuthRepository();
+  final messageRepository = MessageRepository(); // Keep these for providers
+  final userRepository = UserRepository(); // Keep these for providers
+
+  // Create AuthService (needs AuthRepository)
+  final authService = AuthService(authRepository); 
+  // Important: Load auth data early if needed by interceptor immediately
+  // await authService._loadAuthData(); // Consider if needed before first API call
+
+  // --- Setup Dio Interceptors ---
+  setupDioInterceptors(authService, authRepository);
+  // --- End Setup --- 
+
+  runApp(MyApp( // Pass instances needed by MyApp build method
+    authRepository: authRepository,
+    messageRepository: messageRepository,
+    userRepository: userRepository,
+    authService: authService, 
+  ));
 }
 
 class MyApp extends StatelessWidget {
-  const MyApp({super.key});
+  // Receive the instances needed for providers
+  final AuthRepository authRepository;
+  final MessageRepository messageRepository;
+  final UserRepository userRepository;
+  final AuthService authService;
+
+  const MyApp({
+    super.key,
+    required this.authRepository,
+    required this.messageRepository,
+    required this.userRepository,
+    required this.authService,
+  });
 
   @override
   Widget build(BuildContext context) {
-    // These repositories will be used for API requests
-    final authRepository = AuthRepository();
-    final messageRepository = MessageRepository();
-    final userRepository = UserRepository();
+    // Use the pre-created instances for the providers
+    // final authRepository = AuthRepository(); // Remove recreation
+    // final messageRepository = MessageRepository(); // Remove recreation
+    // final userRepository = UserRepository(); // Remove recreation
 
-    // To store messages locally
     SingleChildWidget localStorageServiceProvider = Provider(
       create: (context) => LocalStorageService(),
     );
 
-    // To handle authentication
-    SingleChildWidget authServiceProvider = ChangeNotifierProvider(
-      create: (context) => AuthService(authRepository),
+    // Use the pre-created authService instance
+    SingleChildWidget authServiceProvider = ChangeNotifierProvider.value(
+      value: authService,
     );
 
-    // To handle friendships
     SingleChildWidget userServiceProvider =
         ProxyProvider<AuthService, UserService>(
           update: (context, auth, previous) => UserService(auth, userRepository),
         );
 
-    // To handle messages
     SingleChildWidget messageServiceProvider = ChangeNotifierProxyProvider2<
       AuthService,
       LocalStorageService,
       MessageService
     >(
+      // Note: MessageService might also need the configured Dio instance or its repo
       create:
           (context) => MessageService(
-            context.read<AuthService>(),
+            authService, // Use pre-created instance
             context.read<LocalStorageService>(),
             messageRepository,
           ),
@@ -60,7 +92,6 @@ class MyApp extends StatelessWidget {
               previous!..updateServices(auth, storage, messageRepository),
     );
 
-    // These services will be available
     List<SingleChildWidget> rootProviders = [
       localStorageServiceProvider,
       authServiceProvider,

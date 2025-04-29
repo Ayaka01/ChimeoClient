@@ -31,7 +31,7 @@ class FriendRequestsScreenState extends State<FriendRequestsScreen>
   void initState() {
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
-    _userService = Provider.of<UserService>(context, listen: false);
+    _userService = context.read<UserService>();
 
     _loadReceivedRequests();
     _loadSentRequests();

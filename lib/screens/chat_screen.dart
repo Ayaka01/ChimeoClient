@@ -1,4 +1,3 @@
-// lib/screens/chat_screen.dart
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'dart:async';
@@ -36,6 +35,9 @@ class _ChatScreenState extends State<ChatScreen> {
   late ScrollController _scrollController;
   bool _isSending = false;
   String? _highlightedMessageId;
+  // Store the stream subscriptions
+  StreamSubscription? _messagesSubscription;
+  StreamSubscription? _deliverySubscription; // Added for delivery stream
 
   final _logger = Logger();
 
@@ -47,7 +49,6 @@ class _ChatScreenState extends State<ChatScreen> {
     _messageService = context.read<MessageService>();
     _userService = context.read<UserService>();
 
-    // Get or create the conversation
     _conversation = _messageService.getOrCreateConversation(widget.friend);
     
     // Set initial highlighted message if provided
@@ -56,36 +57,46 @@ class _ChatScreenState extends State<ChatScreen> {
     // Setup focus node 
     _messageFocusNode.addListener(_onFocusChange);
 
-    // Listen for new messages
-    _messageService.messagesStream.listen((message) {
+    // Assign the subscription to the variable
+    _messagesSubscription = _messageService.messagesStream.listen((message) {
       // Filter only for this conversation
       final currentUserId = _authService.user!.username; // Get current user ID safely
-      if ((message.senderId == widget.friend.username && message.recipientId == currentUserId) ||
-          (message.senderId == currentUserId && message.recipientId == widget.friend.username)) {
+      final friendUsername = widget.friend.username;
 
-        // Fetch the latest conversation state from the service
-        // This ensures we have the conversation including the new message
-        final updatedConversation = _messageService.conversations[widget.friend.username];
+      bool isRelevant = (message.senderId == friendUsername && message.recipientId == currentUserId) ||
+                        (message.senderId == currentUserId && message.recipientId == friendUsername);
 
-        setState(() {
-          // Update the local _conversation variable ONLY if the service has it
-          // This is crucial for the build method to use the latest data
-          if (updatedConversation != null) {
-             _conversation = updatedConversation;
-          }
-          // The setState call itself triggers the rebuild using the updated _conversation
-        });
+      if (isRelevant) {
+        // Log the message received from the stream
+        _logger.d('ChatScreen listener received message update: ID=${message.id}, Delivered=${message.delivered}, Timestamp=${message.timestamp}', tag:'_ChatScreenState');
+        
+        // Explicitly fetch the latest conversation state within setState
+        // to ensure the build uses the most up-to-date info.
+        if (mounted) {
+          final updatedConversation = _messageService.conversations[friendUsername];
+          // Log the conversation state just before setState
+          _logger.d('ChatScreen listener: Conversation for $friendUsername has ${updatedConversation?.messages.length ?? 0} messages just before setState.', tag:'_ChatScreenState');
+          setState(() {
+             // Update the local _conversation variable ONLY if the service has it
+             if (updatedConversation != null) {
+                _conversation = updatedConversation;
+             }
+          });
+        }
 
-        // Scroll to bottom for new incoming messages from the friend
-        if (message.senderId == widget.friend.username) {
+        // If the message is from the friend (incoming), scroll to bottom.
+        if (message.senderId == friendUsername && mounted) { 
           _scrollToBottom();
         }
       }
     });
 
-    // Listen for delivery confirmations
-    _messageService.deliveryStream.listen((messageId) {
-      setState(() {});
+    // Listen for delivery confirmations & store subscription
+    _deliverySubscription = _messageService.deliveryStream.listen((messageId) {
+      // Add mounted check here too for safety
+      if (mounted) { 
+        setState(() {});
+      }
     });
     
     // If there's a highlighted message, scroll to it after build
@@ -137,7 +148,8 @@ class _ChatScreenState extends State<ChatScreen> {
     // Only scroll if we have a scroll controller with clients
     if (_scrollController.hasClients) {
       _scrollController.animateTo(
-        0,
+        // Scroll to offset 0 (visual bottom when reversed)
+        0, 
         duration: Duration(milliseconds: 300),
         curve: Curves.easeOut,
       );
@@ -146,6 +158,7 @@ class _ChatScreenState extends State<ChatScreen> {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (_scrollController.hasClients) {
           _scrollController.animateTo(
+            // Scroll to offset 0 (visual bottom when reversed)
             0,
             duration: Duration(milliseconds: 300),
             curve: Curves.easeOut,
@@ -161,6 +174,9 @@ class _ChatScreenState extends State<ChatScreen> {
     _messageFocusNode.removeListener(_onFocusChange);
     _messageFocusNode.dispose();
     _scrollController.dispose();
+    // Cancel the subscriptions!
+    _messagesSubscription?.cancel();
+    _deliverySubscription?.cancel(); // Cancel delivery subscription
     
     super.dispose();
   }
@@ -189,13 +205,9 @@ class _ChatScreenState extends State<ChatScreen> {
         _isSending = false;
       });
       
-      // Scroll to bottom on new message (even if optimistic UI already added it)
+      // Scroll to bottom AFTER successful send/update 
+      // (message will be non-null on success)
       _scrollToBottom();
-
-      if (message == null) {
-        // Message failed to send despite optimistic update
-        // The MessageService will have marked it as failed
-      }
     } catch (e) {
       // Check if widget is still mounted before using context
       if (!mounted) return;
@@ -483,8 +495,13 @@ class _ChatScreenState extends State<ChatScreen> {
       return _buildEmptyChatView();
     }
 
+    // Sort messages: oldest first, handle null timestamps
     final sortedMessages = List<MessageModel>.from(_conversation.messages)
-      ..sort((a, b) => a.timestamp.compareTo(b.timestamp));
+      ..sort((a, b) {
+        final aTime = a.timestamp ?? DateTime.fromMillisecondsSinceEpoch(0);
+        final bTime = b.timestamp ?? DateTime.fromMillisecondsSinceEpoch(0);
+        return aTime.compareTo(bTime);
+      });
 
     return ListView.builder(
       reverse: true,
@@ -492,8 +509,9 @@ class _ChatScreenState extends State<ChatScreen> {
       itemCount: sortedMessages.length,
       padding: EdgeInsets.symmetric(horizontal: 10, vertical: 12),
       itemBuilder: (context, index) {
-        final messageIndex = sortedMessages.length - 1 - index;
-        final message = sortedMessages[messageIndex]; 
+        // REINSTATE manual index calculation - maybe needed with reverse:true updates?
+        final messageIndex = sortedMessages.length - 1 - index; 
+        final message = sortedMessages[messageIndex]; // Use calculated index
         final isFromMe = message.senderId == _authService.user!.username;
         final isHighlighted = message.id == _highlightedMessageId;
 
@@ -620,10 +638,15 @@ class _ChatScreenState extends State<ChatScreen> {
 
   // Builds the row containing the timestamp and delivery status icon
   Widget _buildTimestampAndStatus(MessageModel message, bool isFromMe) {
+    // Log the status being used for the icon
+    _logger.d('Building status icon for Msg ID: ${message.id}, Delivered: ${message.delivered}', tag:'_ChatScreenState:BuildStatus');
+      
     final bool hasError = message.error;
+    // Remove isRead logic
     final Color timeStatusColor = isFromMe && !hasError 
       ? Colors.white.withAlpha(180) // Lighter white for sent messages
       : Colors.black54;
+    // Remove readColor definition
 
     return Row(
       mainAxisSize: MainAxisSize.min,
@@ -638,17 +661,16 @@ class _ChatScreenState extends State<ChatScreen> {
           Padding(
             padding: const EdgeInsets.only(left: 4.0),
             child: Icon(
+              // New Logic: Error -> Delivered (2 ticks) -> Sent (1 tick)
               hasError
-                  ? Icons.error_outline // Error icon
-                  : message.delivered
-                      ? (message.read ? Icons.done_all_sharp : Icons.done_all) // Read (sharp) vs Delivered
-                      : Icons.done, // Sent icon
+                  ? Icons.error_outline // 1. Error Icon
+                  : message.delivered 
+                      ? Icons.done_all  // 2. Delivered Icon (Double Tick)
+                      : Icons.done,     // 3. Sent to server, not delivered (Single Tick)
               size: 14,
               color: hasError
-                  ? Colors.red[700] // Darker red for error icon
-                  : message.read
-                      ? AppColors.secondary // Accent color for read
-                      : timeStatusColor, // Same color as timestamp for sent/delivered
+                  ? Colors.red[700] // Error color
+                  : timeStatusColor, // Default color for Sent and Delivered ticks
             ),
           ),
       ],
@@ -739,7 +761,11 @@ class _ChatScreenState extends State<ChatScreen> {
     );
   }
 
-  String _formatTime(DateTime time) {
+  // Format time, handle null timestamp for optimistic messages
+  String _formatTime(DateTime? time) {
+    if (time == null) {
+      return "--:--"; // Placeholder for optimistic messages
+    }
     final hour = time.hour.toString().padLeft(2, '0');
     final minute = time.minute.toString().padLeft(2, '0');
     return '$hour:$minute';

@@ -6,7 +6,6 @@ class UserAvatar extends StatelessWidget {
   final String displayName;
   final String? avatarUrl;
   final double size;
-  final UserStatus? status;
   final Color backgroundColor;
   final Color textColor;
   final VoidCallback? onTap;
@@ -16,7 +15,6 @@ class UserAvatar extends StatelessWidget {
     required this.displayName,
     this.avatarUrl,
     this.size = 40.0,
-    this.status,
     this.backgroundColor = AppColors.primary,
     this.textColor = Colors.white,
     this.onTap,

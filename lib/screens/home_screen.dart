@@ -27,20 +27,22 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
+  final TextEditingController _searchController = TextEditingController();
+  final Logger _logger = Logger();
+
   late UserService _userService;
   late AuthService _authService;
   late MessageService _messageService;
+
   List<UserModel> _friends = [];
   bool _isLoadingFriends = true;
   String? _friendsError;
-  
-  final TextEditingController _searchController = TextEditingController();
-  final Logger _logger = Logger();
   
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
+
     _authService = context.read<AuthService>();
     _userService = context.read<UserService>();
     _messageService = context.read<MessageService>();
@@ -122,7 +124,7 @@ class _HomeScreenState extends State<HomeScreen>
       _logger.i('User confirmed sign out', tag: 'HomeScreen');
 
       try {
-        await _authService.signOut(context);
+        await _authService.signOut();
 
         // Check if widget is still mounted after async operation
         if (isWidgetMounted && mounted) {
@@ -345,17 +347,17 @@ class _HomeScreenState extends State<HomeScreen>
         SizedBox(width: 4),
         if (isCurrentUserSender)
           Icon(
+            // Simplified icon logic for conversation list
             lastMessage.error
-                ? Icons.error_outline
+                ? Icons.error_outline // Error
                 : lastMessage.delivered
-                    ? (lastMessage.read ? Icons.done_all_sharp : Icons.done_all)
-                    : Icons.done,
+                    ? Icons.done_all    // Delivered (Double Tick)
+                    : Icons.schedule,   // Pending (Clock) - Or Icons.done for single tick if preferred
             size: 16,
+            // Simplified color logic
             color: lastMessage.error
                 ? Colors.red
-                : lastMessage.read
-                    ? AppColors.primary
-                    : Colors.grey,
+                : Colors.grey, // Use grey for pending/delivered in list view
           ),
       ],
     );
@@ -540,7 +542,12 @@ class _HomeScreenState extends State<HomeScreen>
     );
   }
 
-  String _formatTimestamp(DateTime timestamp) {
+  // Update to handle nullable DateTime?
+  String _formatTimestamp(DateTime? timestamp) {
+    if (timestamp == null) {
+      return "-"; // Or some other placeholder
+    }
+    
     final now = DateTime.now();
     final difference = now.difference(timestamp);
 

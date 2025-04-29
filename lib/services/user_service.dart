@@ -15,12 +15,7 @@ class UserService {
 
   Future<List<UserModel>> searchUsers(String query) async {
     _logger.d('Executing searchUsers with query: "$query"', tag: 'UserService');
-    final token = _authService.token;
-    if (token == null) {
-      _logger.w('Search users requires authentication', tag: 'UserService');
-      throw Exception('Not authenticated'); // Changed to throw
-    }
-    final Result<List<UserModel>> result = await _userRepository.searchUsers(query, token);
+    final Result<List<UserModel>> result = await _userRepository.searchUsers(query);
 
     if (result.isSuccess) {
        _logger.i('User search successful, found ${result.value.length} users', tag: 'UserService');
@@ -33,12 +28,7 @@ class UserService {
 
   Future<List<UserModel>> getFriends() async {
     _logger.d('Executing getFriends', tag: 'UserService');
-    final token = _authService.token;
-    if (token == null) {
-      _logger.w('Get friends requires authentication', tag: 'UserService');
-      throw Exception('Not authenticated'); // Changed to throw
-    }
-    final Result<List<UserModel>> result = await _userRepository.getFriends(token);
+    final Result<List<UserModel>> result = await _userRepository.getFriends();
 
     if (result.isSuccess) {
       _logger.i('Get friends successful, found ${result.value.length} friends', tag: 'UserService');
@@ -51,12 +41,7 @@ class UserService {
 
   Future<bool> sendFriendRequest(String username) async {
     _logger.d('Executing sendFriendRequest to username: $username', tag: 'UserService');
-    final token = _authService.token;
-    if (token == null) {
-      _logger.w('Send friend request requires authentication', tag: 'UserService');
-      throw Exception('Not authenticated'); 
-    }
-    final Result<void> result = await _userRepository.sendFriendRequest(username, token);
+    final Result<void> result = await _userRepository.sendFriendRequest(username);
 
     if (result.isSuccess) {
       _logger.i('Friend request sent successfully to $username via repository', tag: 'UserService');
@@ -72,18 +57,13 @@ class UserService {
     String action,
   ) async {
     _logger.d('Executing respondToFriendRequest ID: $requestId, action: $action', tag: 'UserService');
-    final token = _authService.token;
-    if (token == null) {
-      _logger.w('Respond to friend request requires authentication', tag: 'UserService');
-      throw Exception('Not authenticated');
-    }
 
     if (action != 'accept' && action != 'reject') {
         _logger.e('Invalid action for respondToFriendRequest: $action', tag: 'UserService');
         throw ArgumentError('Action must be either \'accept\' or \'reject\'');
     }
 
-    final Result<void> result = await _userRepository.respondToFriendRequest(requestId, action, token);
+    final Result<void> result = await _userRepository.respondToFriendRequest(requestId, action);
 
     if (result.isSuccess) {
       _logger.i('Successfully responded ($action) to friend request $requestId via repository', tag: 'UserService');
@@ -95,12 +75,7 @@ class UserService {
 
   Future<List<FriendRequestModel>> getReceivedFriendRequests() async {
     _logger.d('Executing getReceivedFriendRequests', tag: 'UserService');
-    final token = _authService.token;
-    if (token == null) {
-      _logger.w('Get received friend requests requires authentication', tag: 'UserService');
-       throw Exception('Not authenticated'); // Changed to throw
-    }
-    final Result<List<FriendRequestModel>> result = await _userRepository.getReceivedFriendRequests(token);
+    final Result<List<FriendRequestModel>> result = await _userRepository.getReceivedFriendRequests();
 
     if (result.isSuccess) {
        _logger.i('Get received requests successful, found ${result.value.length} requests', tag: 'UserService');
@@ -115,17 +90,11 @@ class UserService {
     String? status, // Keep status param if future filtering is planned
   }) async {
     _logger.d('Executing getSentFriendRequests', tag: 'UserService');
-    final token = _authService.token;
-    if (token == null) {
-      _logger.w('Get sent friend requests requires authentication', tag: 'UserService');
-      throw Exception('Not authenticated'); // Changed to throw
-    }
-    // Log if status filter is provided (though not used by repo yet)
     if (status != null) {
        _logger.d('Filtering sent requests by status: $status', tag: 'UserService');
     }
     
-    final Result<List<FriendRequestModel>> result = await _userRepository.getSentFriendRequests(token);
+    final Result<List<FriendRequestModel>> result = await _userRepository.getSentFriendRequests();
 
     if (result.isSuccess) {
       _logger.i('Get sent requests successful, found ${result.value.length} requests', tag: 'UserService');
