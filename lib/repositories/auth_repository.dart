@@ -48,20 +48,32 @@ class AuthRepository {
       if (e.response != null) {
           // Handle specific HTTP status codes from the response
           final statusCode = e.response!.statusCode;
-          if (statusCode == 422) {
-             return Result.failure(InvalidEmailFormatException());
+          final errorData = e.response!.data;
+          String detail = e.message ?? 'Unknown error';
+          if (errorData is Map && errorData.containsKey('detail')) {
+              detail = errorData['detail'];
+          }
+          
+          // Use specific exceptions based on status code
+          if (statusCode == 404) { 
+              // Specific handling for Email Not Found
+              return Result.failure(LoginException(detail)); // Or create EmailNotFoundException
           }
           if (statusCode == 401) {
+            // Handles PasswordIncorrectError from backend
             return Result.failure(InvalidCredentialsException());
+          }
+           if (statusCode == 422) { 
+              // Assuming 422 is still possible for validation errors (though backend uses 400 now)
+             return Result.failure(InvalidEmailFormatException());
           }
            if (statusCode == 500) {
             return Result.failure(InternalServerErrorException());
           }
-          // Extract detail if possible
-          final detail = e.response!.data?['detail'] ?? e.message;
-          return Result.failure(RepositoryException('Sign in failed: $detail'));
+          // Fallback for other 4xx/5xx errors
+          return Result.failure(RepositoryException('Sign in failed ($statusCode): $detail'));
       } else {
-          // Handle connection errors, timeouts, etc.
+          // Handle connection errors, timeouts, etc. (no response)
           return Result.failure(RepositoryException('Sign in failed: ${e.message}'));
       }
     } catch (e) {
@@ -88,10 +100,11 @@ class AuthRepository {
         );
 
         // Check for 201 Created specifically
-        if (response.statusCode == 201 && response.data is Map<String, dynamic>) {
+        // Backend now returns 200 on success, update check? Assuming 200 is okay.
+        if (response.statusCode == 200 && response.data is Map<String, dynamic>) {
              return Result.success(response.data as Map<String, dynamic>);
         } else {
-            _logger.w('Sign up returned non-201 or invalid data: ${response.statusCode}', tag: 'AuthRepository');
+            _logger.w('Sign up returned non-200 or invalid data: ${response.statusCode}', tag: 'AuthRepository');
             throw RepositoryException('Sign up failed: Unexpected response format');
         }
 
@@ -101,35 +114,48 @@ class AuthRepository {
             final statusCode = e.response!.statusCode;
             final errorData = e.response!.data;
             String detail = e.message ?? 'Unknown error';
-            if (errorData is Map && errorData.containsKey('detail')) {
-                detail = errorData['detail'];
+            String? errorCode; // Variable to store the error code
+            
+            if (errorData is Map) {
+                if (errorData.containsKey('detail')) {
+                    detail = errorData['detail'];
+                }
+                if (errorData.containsKey('error_code')) {
+                    errorCode = errorData['error_code']; // Parse error code
+                }
             }
 
-            if (statusCode == 422) {
-                return Result.failure(InvalidEmailFormatException());
-            }
-            if (statusCode == 400) {
-                if (detail.contains("Username must be at least")) {
-                    return Result.failure(UsernameTooShortException());
-                }
-                if (detail == "Username already taken") {
+            if (statusCode == 409) { // Conflict for existing user/email
+                if (errorCode == "USERNAME_EXISTS") {
                     return Result.failure(UsernameTakenException());
                 }
-                if (detail == "Email already registered") {
+                if (errorCode == "EMAIL_EXISTS") {
                     return Result.failure(EmailInUseException());
                 }
-                if (detail.contains("Password must")) {
+                // Fallback for unexpected 409
+                 return Result.failure(RegistrationException('Registration conflict: $detail'));
+            }
+            if (statusCode == 400) { // Bad Request for validation errors
+                 if (errorCode == "USERNAME_TOO_SHORT") {
+                    return Result.failure(UsernameTooShortException());
+                }
+                 if (errorCode == "WEAK_PASSWORD") {
                     return Result.failure(PasswordTooWeakException());
                 }
-                // Generic 400
-                 return Result.failure(RepositoryException('Sign up failed: $detail'));
+                // Fallback for other 400 errors
+                 return Result.failure(RegistrationException('Registration failed: $detail'));
+            }
+            if (statusCode == 422) { 
+                // If backend can still send 422 for other validation
+                return Result.failure(InvalidEmailFormatException()); // Or a more generic ValidationDataError
             }
              if (statusCode == 500) {
                  return Result.failure(InternalServerErrorException());
             }
-            // Other status codes
-            return Result.failure(RepositoryException('Sign up failed: $detail'));
+            // Fallback for other status codes
+            return Result.failure(RepositoryException('Sign up failed ($statusCode): $detail'));
          } else {
+            // Handle connection errors, timeouts, etc. (no response)
             return Result.failure(RepositoryException('Sign up failed: ${e.message}'));
          }
       } catch (e) {
@@ -140,32 +166,48 @@ class AuthRepository {
   
   // Accept an optional Dio instance, default to the global one
   Future<Result<Map<String, dynamic>>> refreshAuthToken(String refreshToken, {Dio? dioInstance}) async {
-      final dioClient = dioInstance ?? _dio; // Use provided Dio or the default one
+      // Use the dedicated dio instance for refresh to avoid interceptor loop
+      final dioClient = dioForRefresh; 
       try {
-          final response = await dioClient.post( // Use the selected Dio client
+          _logger.d('Attempting token refresh', tag: 'AuthRepository');
+          // Refresh token should be sent in the header now
+          final response = await dioClient.post(
               '${ApiConfig.authPath}/refresh',
-              data: json.encode({'refresh_token': refreshToken}),
+              options: Options(headers: {'Authorization': 'Bearer $refreshToken'})
           );
           
           if (response.statusCode == 200 && response.data is Map<String, dynamic>) {
+              _logger.i('Token refresh successful', tag: 'AuthRepository');
               return Result.success(response.data as Map<String, dynamic>);
           } else {
                _logger.w('Token refresh returned non-200 or invalid data: ${response.statusCode}', tag: 'AuthRepository');
-              throw RepositoryException('Token refresh failed: Unexpected response format');
+              // Use specific exception if possible based on backend contract
+              return Result.failure(RepositoryException('Token refresh failed: Unexpected response format'));
           }
       } on DioException catch (e) {
           _logger.e('DioException during token refresh', error: e, tag: 'AuthRepository');
           if (e.response != null) {
               final statusCode = e.response!.statusCode;
-              final detail = e.response!.data?['detail'] ?? e.message;
+              final errorData = e.response!.data;
+              String detail = e.message ?? 'Unknown error';
+              if (errorData is Map && errorData.containsKey('detail')) {
+                 detail = errorData['detail'];
+              }
                if (statusCode == 401) {
-                  return Result.failure(InvalidCredentialsException());
+                  // Invalid/Expired refresh token
+                  _logger.w('Token refresh failed (401): $detail', tag: 'AuthRepository');
+                  return Result.failure(InvalidCredentialsException()); // Or a specific RefreshTokenExpiredException
                }
-               if (statusCode == 500) { // Added check for 500
+               if (statusCode == 500) {
+                 _logger.w('Token refresh failed (500): $detail', tag: 'AuthRepository');
                  return Result.failure(InternalServerErrorException());
                }
-               return Result.failure(RepositoryException('Token refresh failed: $detail'));
+               // Fallback for other errors during refresh
+               _logger.w('Token refresh failed ($statusCode): $detail', tag: 'AuthRepository');
+               return Result.failure(RepositoryException('Token refresh failed ($statusCode): $detail'));
           } else {
+              // Network/connection error during refresh
+               _logger.w('Token refresh failed (Connection Error): ${e.message}', tag: 'AuthRepository');
                return Result.failure(RepositoryException('Token refresh failed: ${e.message}'));
           }
       } catch (e) {
