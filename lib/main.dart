@@ -16,22 +16,19 @@ import 'utils/dio_client.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // --- Initialize dependencies needed for Dio Interceptor --- 
-  // Create repositories (they use the global dio instance internally now)
+  // Create repositories for API requests
   final authRepository = AuthRepository();
-  final messageRepository = MessageRepository(); // Keep these for providers
-  final userRepository = UserRepository(); // Keep these for providers
+  final messageRepository = MessageRepository();
+  final userRepository = UserRepository();
 
   // Create AuthService (needs AuthRepository)
   final authService = AuthService(authRepository); 
   // Important: Load auth data early if needed by interceptor immediately
   // await authService._loadAuthData(); // Consider if needed before first API call
 
-  // --- Setup Dio Interceptors ---
   setupDioInterceptors(authService, authRepository);
-  // --- End Setup --- 
 
-  runApp(MyApp( // Pass instances needed by MyApp build method
+  runApp(MyApp(
     authRepository: authRepository,
     messageRepository: messageRepository,
     userRepository: userRepository,

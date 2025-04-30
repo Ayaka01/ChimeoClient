@@ -5,9 +5,6 @@ import '../utils/result.dart';
 import 'local_storage_service.dart';
 import '../repositories/auth_repository.dart';
 import '../utils/logger.dart';
-import 'package:provider/provider.dart';
-import '../services/message_service.dart';
-import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 
 // Define Secure Storage keys
@@ -82,7 +79,6 @@ class AuthService with ChangeNotifier {
 
     } catch (e) {
       _logger.e('Failed to save tokens and user data', error: e, tag: 'AuthService');
-      // Optionally clear state if save fails?
     }
   }
   
@@ -214,15 +210,13 @@ class AuthService with ChangeNotifier {
     }
   }
 
-  // Method called by AuthInterceptor after successful token refresh
   Future<void> handleSuccessfulRefresh(Map<String, dynamic> tokenData) async {
     final accessToken = tokenData['access_token'] as String?;
-    final refreshToken = tokenData['refresh_token'] as String?; // Backend sends back the same one
-    final user = this.user; // Get current user
+    final refreshToken = tokenData['refresh_token'] as String?;
+    final user = this.user;
 
     if (accessToken != null && refreshToken != null && user != null) {
       _logger.i('Handling successful token refresh for user: ${user.username}', tag: 'AuthService');
-      // Use the existing save method to update state and secure storage
       await _saveTokensAndUserData(accessToken, refreshToken, user);
     } else {
       // Include tokenData details in the message string
