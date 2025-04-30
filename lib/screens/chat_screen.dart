@@ -639,14 +639,15 @@ class _ChatScreenState extends State<ChatScreen> {
   // Builds the row containing the timestamp and delivery status icon
   Widget _buildTimestampAndStatus(MessageModel message, bool isFromMe) {
     // Log the status being used for the icon
-    _logger.d('Building status icon for Msg ID: ${message.id}, Delivered: ${message.delivered}', tag:'_ChatScreenState:BuildStatus');
+    _logger.d('Building status icon for Msg ID: ${message.id}, isOffline: ${message.isOffline}, Delivered: ${message.delivered}, Error: ${message.error}', tag:'_ChatScreenState:BuildStatus');
       
     final bool hasError = message.error;
-    // Remove isRead logic
+    final bool isOffline = message.isOffline;
+    final bool isDelivered = message.delivered;
+
     final Color timeStatusColor = isFromMe && !hasError 
       ? Colors.white.withAlpha(180) // Lighter white for sent messages
       : Colors.black54;
-    // Remove readColor definition
 
     return Row(
       mainAxisSize: MainAxisSize.min,
@@ -661,16 +662,21 @@ class _ChatScreenState extends State<ChatScreen> {
           Padding(
             padding: const EdgeInsets.only(left: 4.0),
             child: Icon(
-              // New Logic: Error -> Delivered (2 ticks) -> Sent (1 tick)
+              // --> Updated Logic: Error -> Offline -> Delivered -> Sent <--
               hasError
                   ? Icons.error_outline // 1. Error Icon
-                  : message.delivered 
-                      ? Icons.done_all  // 2. Delivered Icon (Double Tick)
-                      : Icons.done,     // 3. Sent to server, not delivered (Single Tick)
+                  : isOffline
+                      ? Icons.access_time // 2. Offline/Pending Icon (Clock)
+                      : isDelivered 
+                          ? Icons.done_all  // 3. Delivered Icon (Double Tick)
+                          : Icons.done,     // 4. Sent to server, not delivered (Single Tick)
               size: 14,
+              // Adjust color based on state
               color: hasError
                   ? Colors.red[700] // Error color
-                  : timeStatusColor, // Default color for Sent and Delivered ticks
+                  : isOffline 
+                      ? timeStatusColor.withAlpha(120) // Dimmer color for clock
+                      : timeStatusColor, // Default color for Sent and Delivered ticks
             ),
           ),
       ],

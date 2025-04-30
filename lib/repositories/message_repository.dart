@@ -36,18 +36,13 @@ class MessageRepository {
 
     } on DioException catch (e) {
       _logger.e('DioException marking message $messageId delivered', error: e, tag: 'MessageRepository');
-      if (e.response != null) {
-        final statusCode = e.response!.statusCode;
-         if (statusCode == 404) {
-            return Result.failure(RepositoryException('Message not found')); // Use existing exception
-         }
-        final detail = e.response!.data?['detail'] ?? e.message;
-        return Result.failure(RepositoryException('Failed to mark message delivered: $detail'));
-      } else {
-        return Result.failure(RepositoryException('Network error marking message delivered: ${e.message}'));
-      }
+      // Use the centralized mapping function
+      return Result.failure(mapDioExceptionToApiException(e));
     } catch (e) {
       _logger.e('Unexpected error marking message $messageId delivered', error: e, tag: 'MessageRepository');
+      if (e is Exception) {
+         return Result.failure(e);
+      }
       return Result.failure(RepositoryException('Failed to mark message delivered: ${e.toString()}'));
     }
   }
@@ -57,32 +52,30 @@ class MessageRepository {
      try {
         final response = await _dio.get(
           '${ApiConfig.messagesPath}/pending',
-        );
+      );
 
         if (response.statusCode == 200 && response.data is List) {
             final List<dynamic> data = response.data;
-            final messages = data.map((json) => MessageModel.fromJson(json)).toList();
-            _logger.i('Fetched ${messages.length} pending messages successfully', tag: 'MessageRepository');
+        final messages = data.map((json) => MessageModel.fromJson(json)).toList();
+        _logger.i('Fetched ${messages.length} pending messages successfully', tag: 'MessageRepository');
             return Result.success(messages);
         } else {
              _logger.w('Get pending messages returned non-200 or invalid data: ${response.statusCode}', tag: 'MessageRepository');
-             throw RepositoryException('Failed to get pending messages: Unexpected response format');
+             // Throw ApiException for consistency
+             throw ApiException(message: 'Failed to get pending messages: Unexpected response format', statusCode: response.statusCode);
         }
 
      } on DioException catch (e) {
         _logger.e('DioException getting pending messages', error: e, tag: 'MessageRepository');
-        if (e.response != null) {
-          final statusCode = e.response!.statusCode;
-          final detail = e.response!.data?['detail'] ?? e.message;
-          // Add specific error handling if needed (e.g., 401 handled by interceptor later)
-          return Result.failure(RepositoryException('Failed to get pending messages: $detail'));
-        } else {
-          return Result.failure(RepositoryException('Network error getting pending messages: ${e.message}'));
-        }
+         // Use the centralized mapping function
+        return Result.failure(mapDioExceptionToApiException(e));
      } catch (e) {
        _logger.e('Unexpected error getting pending messages', error: e, tag: 'MessageRepository');
+       if (e is Exception) {
+          return Result.failure(e);
+       }
        return Result.failure(RepositoryException('Failed to get pending messages: ${e.toString()}'));
-     }
+      }
   }
 
   Future<Result<MessageModel>> sendMessageViaHttp(String recipientId, String text) async {
@@ -103,27 +96,19 @@ class MessageRepository {
           return Result.success(sentMessage);
       } else {
           _logger.w('Send message returned non-200 or invalid data: ${response.statusCode}', tag: 'MessageRepository');
-          throw RepositoryException('Failed to send message: Unexpected response format');
+          // Throw ApiException for consistency
+          throw ApiException(message: 'Failed to send message: Unexpected response format', statusCode: response.statusCode);
       }
 
     } on DioException catch (e) {
       _logger.e('DioException sending message', error: e, tag: 'MessageRepository');
-      if (e.response != null) {
-        final statusCode = e.response!.statusCode;
-        if(statusCode == 422) {
-          // Use ValidationDataError defined in exceptions.dart
-          return Result.failure(ValidationDataError("Data Validation Error")); 
-        }
-        if(statusCode == 500) {
-          return Result.failure(InternalServerErrorException());
-        }
-        final detail = e.response!.data?['detail'] ?? e.message;
-         return Result.failure(RepositoryException('Failed to send message: $detail'));
-      } else {
-         return Result.failure(RepositoryException('Network error sending message: ${e.message}'));
-      }
+      // Use the centralized mapping function
+      return Result.failure(mapDioExceptionToApiException(e));
     } catch (e) {
       _logger.e('Unexpected error sending message', error: e, tag: 'MessageRepository');
+      if (e is Exception) {
+         return Result.failure(e);
+      }
       return Result.failure(RepositoryException('Failed to send message: ${e.toString()}'));
     }
   }

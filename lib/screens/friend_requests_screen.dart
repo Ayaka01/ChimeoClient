@@ -7,6 +7,7 @@ import '../components/user_avatar.dart';
 import '../constants/colors.dart';
 import '../components/error_display.dart';
 import '../utils/logger.dart'; // Import Logger
+import 'package:simple_messenger/utils/exceptions.dart'; // Ensure imported
 
 class FriendRequestsScreen extends StatefulWidget {
   const FriendRequestsScreen({super.key});
@@ -63,7 +64,7 @@ class FriendRequestsScreenState extends State<FriendRequestsScreen>
       _logger.e('Error loading received requests', error: e, tag: 'FriendRequestsScreen');
       setState(() {
         _isLoadingReceived = false;
-        _receivedError = 'Error al cargar solicitudes recibidas.';
+        _receivedError = e is Exception ? e.toString() : 'Error al cargar solicitudes recibidas.';
       });
     }
   }
@@ -88,45 +89,53 @@ class FriendRequestsScreenState extends State<FriendRequestsScreen>
       _logger.e('Error loading sent requests', error: e, tag: 'FriendRequestsScreen');
       setState(() {
         _isLoadingSent = false;
-        _sentError = 'Error al cargar solicitudes enviadas.';
+        _sentError = e is Exception ? e.toString() : 'Error al cargar solicitudes enviadas.';
       });
     }
   }
 
   Future<void> _respondToRequest(String requestId, String action) async {
     _logger.d('Attempting to respond ($action) to request $requestId', tag: 'FriendRequestsScreen');
+    
+    String errorTitle = 'Error al responder';
+    String errorMessage = 'Ocurrió un error inesperado.'; // Default message
+
     try {
-      // Call the service method, which throws on failure
-      await _userService.respondToFriendRequest(
-        requestId,
-        action,
-      );
-
+      await _userService.respondToFriendRequest(requestId, action);
       _logger.i('Response ($action) to request $requestId successful', tag: 'FriendRequestsScreen');
-
-      // If we reach here, the call was successful (no exception thrown)
       if (!mounted) return;
-
-      // Reload the lists
+      // Reload the lists on success
       _loadReceivedRequests();
       _loadSentRequests();
+      return; // Exit on success
 
-    } catch (e) { // Catch any exceptions from the service call
+    // Catch specific known errors
+    } on FriendRequestNotFoundException catch (e) {
+        errorMessage = e.message;
+    } on NotAuthorizedException catch (e) {
+        errorMessage = e.message;
+        errorTitle = 'No autorizado';
+    } on InvalidFriendRequestStateException catch (e) {
+        errorMessage = e.message;
+        errorTitle = 'Acción inválida';
+    } on Exception catch (e) { // Catch other general exceptions
       _logger.e('Error responding to request $requestId ($action)', error: e, tag: 'FriendRequestsScreen');
-      if (!mounted) return;
+      errorMessage = e.toString(); // Use the exception's message
+    }
       
-      // Show error dialog instead of just logging
+    // Show dialog only if an error occurred
+    if (mounted) { 
       showDialog(
         context: context,
         builder: (BuildContext dialogContext) {
           return AlertDialog(
-            title: Text('Error al responder'),
-            content: Text(e.toString()), // Display the actual error
+            title: Text(errorTitle),
+            content: Text(errorMessage), // Show specific or generic error message
             actions: <Widget>[
               TextButton(
                 child: Text('OK'),
                 onPressed: () {
-                  Navigator.of(dialogContext).pop(); // Close the dialog
+                  Navigator.of(dialogContext).pop();
                 },
               ),
             ],

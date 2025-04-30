@@ -37,27 +37,17 @@ class UserRepository {
           return Result.success(data.map((json) => UserModel.fromJson(json)).toList());
       } else {
            _logger.w('Search users returned non-200 or invalid data: ${response.statusCode}', tag: 'UserRepository');
-           throw RepositoryException('User search failed: Unexpected response format');
+           throw ApiException(message: 'User search failed: Unexpected response format', statusCode: response.statusCode);
       }
 
     } on DioException catch (e) {
         _logger.e('DioException during user search', error: e, tag: 'UserRepository');
-        if (e.response != null) {
-            final statusCode = e.response!.statusCode;
-            if (statusCode == 422) {
-                // Assuming UsernameTooShortException maps to 422 for this query
-                return Result.failure(UsernameTooShortException()); 
-            }
-            if (statusCode == 500) {
-                return Result.failure(InternalServerErrorException());
-            }
-            final detail = e.response!.data?['detail'] ?? e.message;
-            return Result.failure(RepositoryException('User search failed: $detail'));
-        } else {
-            return Result.failure(RepositoryException('Network error during user search: ${e.message}'));
-        }
+        return Result.failure(mapDioExceptionToApiException(e));
     } catch (e) {
         _logger.e('Unexpected error during user search', error: e, tag: 'UserRepository');
+        if (e is Exception) {
+           return Result.failure(e);
+        }
         return Result.failure(RepositoryException('User search failed: ${e.toString()}'));
     }
   }
@@ -75,23 +65,17 @@ class UserRepository {
           return Result.success(data.map((json) => UserModel.fromJson(json)).toList());
       } else {
           _logger.w('Get friends returned non-200 or invalid data: ${response.statusCode}', tag: 'UserRepository');
-          throw RepositoryException('Get friends failed: Unexpected response format');
+          throw ApiException(message: 'Get friends failed: Unexpected response format', statusCode: response.statusCode);
       }
 
     } on DioException catch (e) {
         _logger.e('DioException fetching friends list', error: e, tag: 'UserRepository');
-        if (e.response != null) {
-            final statusCode = e.response!.statusCode;
-            if (statusCode == 500) {
-                return Result.failure(InternalServerErrorException());
-            }
-             final detail = e.response!.data?['detail'] ?? e.message;
-            return Result.failure(RepositoryException('Get friends failed: $detail'));
-        } else {
-             return Result.failure(RepositoryException('Network error fetching friends: ${e.message}'));
-        }
+        return Result.failure(mapDioExceptionToApiException(e));
     } catch (e) {
         _logger.e('Unexpected error fetching friends', error: e, tag: 'UserRepository');
+        if (e is Exception) {
+           return Result.failure(e);
+        }
         return Result.failure(RepositoryException('Get friends failed: ${e.toString()}'));
     }
   }
@@ -110,22 +94,12 @@ class UserRepository {
 
     } on DioException catch (e) {
         _logger.e('DioException sending friend request', error: e, tag: 'UserRepository');
-        if (e.response != null) {
-            final statusCode = e.response!.statusCode;
-            if(statusCode == 422) {
-                // Use ValidationDataError defined in exceptions.dart
-                return Result.failure(ValidationDataError("Invalid data sending friend request"));
-            }
-            if(statusCode == 500) {
-                return Result.failure(InternalServerErrorException());
-            }
-            final detail = e.response!.data?['detail'] ?? e.message;
-            return Result.failure(RepositoryException('Send friend request failed: $detail'));
-        } else {
-            return Result.failure(RepositoryException('Network error sending friend request: ${e.message}'));
-        }
+        return Result.failure(mapDioExceptionToApiException(e));
     } catch (e) {
          _logger.e('Unexpected error sending friend request', error: e, tag: 'UserRepository');
+         if (e is Exception) {
+            return Result.failure(e);
+         }
          return Result.failure(RepositoryException('Send friend request failed: ${e.toString()}'));
     }
   }
@@ -146,21 +120,12 @@ class UserRepository {
 
     } on DioException catch (e) {
         _logger.e('DioException responding to friend request $requestId', error: e, tag: 'UserRepository');
-        if (e.response != null) {
-            final statusCode = e.response!.statusCode;
-            if(statusCode == 400) { // Backend uses 400 for invalid action
-                 return Result.failure(ValidationDataError("Invalid action. Must be 'accept' or 'reject'"));
-            }
-            if(statusCode == 500) {
-                return Result.failure(InternalServerErrorException());
-            }
-            final detail = e.response!.data?['detail'] ?? e.message;
-            return Result.failure(RepositoryException('Respond friend request failed: $detail'));
-        } else {
-            return Result.failure(RepositoryException('Network error responding to friend request: ${e.message}'));
-        }
+        return Result.failure(mapDioExceptionToApiException(e));
     } catch (e) {
          _logger.e('Unexpected error responding to friend request $requestId', error: e, tag: 'UserRepository');
+         if (e is Exception) {
+            return Result.failure(e);
+         }
          return Result.failure(RepositoryException('Respond friend request failed: ${e.toString()}'));
     }
   }
@@ -177,22 +142,16 @@ class UserRepository {
         return Result.success(data.map((json) => FriendRequestModel.fromJson(json)).toList());
       } else {
          _logger.w('Get received requests returned non-200 or invalid data: ${response.statusCode}', tag: 'UserRepository');
-         throw RepositoryException('Get received requests failed: Unexpected response format');
+         throw ApiException(message: 'Get received requests failed: Unexpected response format', statusCode: response.statusCode);
       }
     } on DioException catch (e) {
        _logger.e('DioException fetching received friend requests', error: e, tag: 'UserRepository');
-        if (e.response != null) {
-            final statusCode = e.response!.statusCode;
-            if(statusCode == 500) {
-              return Result.failure(InternalServerErrorException());
-            }
-            final detail = e.response!.data?['detail'] ?? e.message;
-            return Result.failure(RepositoryException('Get received requests failed: $detail'));
-        } else {
-             return Result.failure(RepositoryException('Network error fetching received requests: ${e.message}'));
-        }
+        return Result.failure(mapDioExceptionToApiException(e));
     } catch (e) {
         _logger.e('Unexpected error fetching received requests', error: e, tag: 'UserRepository');
+        if (e is Exception) {
+           return Result.failure(e);
+        }
         return Result.failure(RepositoryException('Get received requests failed: ${e.toString()}'));
     }
   }
@@ -209,22 +168,16 @@ class UserRepository {
           return Result.success(data.map((json) => FriendRequestModel.fromJson(json)).toList());
        } else {
            _logger.w('Get sent requests returned non-200 or invalid data: ${response.statusCode}', tag: 'UserRepository');
-           throw RepositoryException('Get sent requests failed: Unexpected response format');
+           throw ApiException(message: 'Get sent requests failed: Unexpected response format', statusCode: response.statusCode);
        }
     } on DioException catch (e) {
          _logger.e('DioException fetching sent friend requests', error: e, tag: 'UserRepository');
-          if (e.response != null) {
-              final statusCode = e.response!.statusCode;
-              if(statusCode == 500) {
-                return Result.failure(InternalServerErrorException());
-              }
-              final detail = e.response!.data?['detail'] ?? e.message;
-              return Result.failure(RepositoryException('Get sent requests failed: $detail'));
-          } else {
-               return Result.failure(RepositoryException('Network error fetching sent requests: ${e.message}'));
-          }
+          return Result.failure(mapDioExceptionToApiException(e));
     } catch (e) {
          _logger.e('Unexpected error fetching sent requests', error: e, tag: 'UserRepository');
+         if (e is Exception) {
+            return Result.failure(e);
+         }
           return Result.failure(RepositoryException('Get sent requests failed: ${e.toString()}'));
     }
   }

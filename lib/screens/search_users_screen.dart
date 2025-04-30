@@ -7,6 +7,7 @@ import 'package:simple_messenger/constants/colors.dart';
 import '../components/user_avatar.dart';
 import '../components/error_display.dart';
 import '../utils/logger.dart';
+import 'package:simple_messenger/utils/exceptions.dart';
 
 class SearchUsersScreen extends StatefulWidget {
   const SearchUsersScreen({super.key});
@@ -69,13 +70,21 @@ class SearchUsersScreenState extends State<SearchUsersScreen> {
         _isSearching = false;
       });
       _logger.i('User search returned ${results.length} results', tag: 'SearchUsersScreen');
+      
+    } on NotAuthorizedException catch(e) {
+      _logger.e('Authorization error during user search', error: e, tag: 'SearchUsersScreen');
+       if (!mounted) return;
+      setState(() {
+        _isSearching = false;
+        _searchError = e.message;
+      });
     } catch (e) {
       _logger.e('Error during user search', error: e, tag: 'SearchUsersScreen');
       if (!mounted) return;
       
       setState(() {
         _isSearching = false;
-        _searchError = 'Error al buscar usuarios';
+        _searchError = e is Exception ? e.toString() : 'Error al buscar usuarios'; 
       });
     }
   }
@@ -91,6 +100,9 @@ class SearchUsersScreenState extends State<SearchUsersScreen> {
     setState(() {
       _requestInProgress[username] = true;
     });
+    
+    String? errorTitle = "Error al enviar solicitud";
+    String errorMessage = "Ocurrió un error inesperado.";
 
     try {
       await _userService.sendFriendRequest(username);
@@ -100,18 +112,39 @@ class SearchUsersScreenState extends State<SearchUsersScreen> {
       
       setState(() {
         _sentRequestsUsernames.add(username);
+        _requestInProgress.remove(username); 
       });
+      return;
 
-    } catch (e) {
-      _logger.e('Error sending friend request to $username', error: e, tag: 'SearchUsersScreen');
-      if (!mounted) return;
-      
+    } on UserNotFoundException catch (e) {
+        errorMessage = e.message;
+    } on FriendshipExistsException catch (e) {
+        errorMessage = e.message;
+        if (mounted) setState(() => _sentRequestsUsernames.add(username));
+    } on FriendRequestExistsException catch (e) {
+        errorMessage = e.message;
+         if (mounted) setState(() => _sentRequestsUsernames.add(username));
+    } on CannotFriendSelfException catch (e) {
+        errorMessage = e.message;
+    } on NotAuthorizedException catch (e) {
+        errorMessage = e.message; 
+        errorTitle = "No autorizado";
+    } on Exception catch (e) {
+        _logger.e('Error sending friend request to $username', error: e, tag: 'SearchUsersScreen');
+        errorMessage = e.toString();
+    }
+
+    if (mounted) {
+       setState(() {
+         _requestInProgress[username] = false;
+       });
+       
       showDialog(
         context: context,
         builder: (BuildContext dialogContext) {
           return AlertDialog(
-            title: Text('Error al enviar solicitud'),
-            content: Text(""),
+            title: Text(errorTitle ?? 'Error'),
+            content: Text(errorMessage),
             actions: <Widget>[
               TextButton(
                 child: Text('OK'),
@@ -123,13 +156,6 @@ class SearchUsersScreenState extends State<SearchUsersScreen> {
           );
         },
       );
-
-    } finally {
-      if (mounted) {
-        setState(() {
-          _requestInProgress[username] = false;
-        });
-      }
     }
   }
 

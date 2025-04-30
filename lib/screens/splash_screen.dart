@@ -28,7 +28,7 @@ class _SplashScreenState extends State<SplashScreen> {
         if(mounted) { 
              _handleAuthStateChange(); 
               _performInitialAuthenticatedTasks();
-        }
+  }
     });
   }
 
@@ -59,7 +59,7 @@ class _SplashScreenState extends State<SplashScreen> {
 
   void _cleanupServices() {
      try {
-        final messageService = context.read<MessageService>();
+    final messageService = context.read<MessageService>();
         messageService.disconnect();
         messageService.clearAllLocalConversations(); 
         _logger.i('MessageService disconnected and cleared.', tag: 'SplashScreen');
@@ -73,9 +73,9 @@ class _SplashScreenState extends State<SplashScreen> {
          _logger.d('User is authenticated, performing initial tasks (WebSocket connect, get pending messages).', tag: 'SplashScreen');
          try {
            final messageService = context.read<MessageService>();
-           if (!messageService.isConnected) {
-             messageService.connectToWebSocket();
-           }
+      if (!messageService.isConnected) {
+        messageService.connectToWebSocket();
+      }
            messageService.getPendingMessages(); 
          } catch (e) {
             _logger.e('Error accessing MessageService during initial tasks', error: e, tag: 'SplashScreen');

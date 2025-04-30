@@ -10,7 +10,7 @@ class AuthInterceptor extends QueuedInterceptorsWrapper {
   final AuthService authService;
   final AuthRepository authRepository;
   final Logger _logger = Logger();
-  final FlutterSecureStorage _secureStorage = const FlutterSecureStorage(); // Direct access if needed
+  final FlutterSecureStorage _secureStorage = const FlutterSecureStorage();
 
   bool _isRefreshing = false;
 
@@ -74,10 +74,7 @@ class AuthInterceptor extends QueuedInterceptorsWrapper {
 
         // Make the refresh API call using the AuthRepository, 
         // but pass the dedicated Dio instance for this specific call.
-        final refreshResult = await authRepository.refreshAuthToken(
-            refreshToken,
-            dioInstance: dioForRefresh // Pass the interceptor-free Dio instance
-        );
+        final refreshResult = await authRepository.refreshAuthToken(refreshToken);
 
         if (refreshResult.isSuccess) {
           _logger.i('Token refresh successful. Retrying original request.', tag: 'AuthInterceptor');

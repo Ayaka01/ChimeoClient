@@ -269,9 +269,10 @@ class MessageService with ChangeNotifier {
   }
 
   void _handleNewMessage(MessageModel message) {
-    final friendId = message.senderId == _authService.user?.username
-        ? message.recipientId
-        : message.senderId;
+    final currentUserId = _authService.user?.username;
+    final bool isIncoming = message.recipientId == currentUserId;
+    
+    final friendId = isIncoming ? message.senderId : message.recipientId;
 
     _conversations.putIfAbsent(
       friendId,
@@ -290,6 +291,7 @@ class MessageService with ChangeNotifier {
       _logger.i('Handled new message ${message.id}, added to end.', tag:'MessageService');
     } else {
       conversation.messages[existingIndex] = message;
+      _logger.i('Handled new message ${message.id}, updated existing entry.', tag:'MessageService');
     }
 
     // Sort messages: oldest first, handle null timestamps (treat as oldest)
@@ -302,15 +304,53 @@ class MessageService with ChangeNotifier {
     _messageController.add(message);
     _saveConversations();
     notifyListeners();
+
+    if (isIncoming) {
+      _acknowledgeMessageDelivery(message.id);
+    }
+  }
+
+  Future<void> _acknowledgeMessageDelivery(String messageId) async {
+    if (messageId.length < 36) {
+        _logger.w('Skipping acknowledgment for potentially temporary ID: $messageId', tag: 'MessageService');
+        return;
+    }
+    _logger.i('Acknowledging delivery for message $messageId', tag: 'MessageService');
+    try {
+      final result = await _messageRepository.markMessageAsDelivered(messageId);
+      if (result.isSuccess) {
+        _logger.i('Successfully acknowledged delivery for $messageId to server.', tag: 'MessageService');
+      } else {
+        _logger.e(
+          'Failed to acknowledge delivery for $messageId: ${result.error?.toString()}',
+          error: result.error,
+          tag: 'MessageService',
+        );
+      }
+    } catch (e, s) {
+      _logger.e(
+        'Exception acknowledging delivery for $messageId: $e',
+        error: e,
+        stackTrace: s,
+        tag: 'MessageService',
+      );
+    }
   }
 
   void _handleMessageDelivered(String messageId) {
     bool updated = false;
+    _logger.i('Received delivery confirmation trigger for messageId: $messageId', tag:'MessageService:HandleDelivery');
+    
     for (var conversation in _conversations.values) {
       final messageIndex = conversation.messages.indexWhere((m) => m.id == messageId);
       if (messageIndex != -1) {
-        if (!conversation.messages[messageIndex].delivered) {
+        final message = conversation.messages[messageIndex];
+        _logger.d('Found message ${message.id} in conversation ${conversation.friendUsername}. Current delivered status: ${message.delivered}', tag:'MessageService:HandleDelivery');
+        
+        if (!message.delivered) {
           conversation.messages[messageIndex].delivered = true;
+          _logger.i('Updated message ${message.id} delivered status to: ${conversation.messages[messageIndex].delivered}', tag:'MessageService:HandleDelivery');
+          
           _messageController.add(conversation.messages[messageIndex]);
           updated = true;
           break;
@@ -318,7 +358,7 @@ class MessageService with ChangeNotifier {
       }
     }
     if (updated) {
-      _logger.i('Marked message $messageId as delivered', tag: 'MessageService');
+      _logger.i('Marked message $messageId as delivered, saving and notifying listeners.', tag: 'MessageService');
       _saveConversations();
       _deliveryController.add(messageId);
       notifyListeners();
@@ -373,6 +413,7 @@ class MessageService with ChangeNotifier {
       recipientId: recipientId,
       text: text,
       delivered: false,
+      isOffline: true,
       timestamp: DateTime.now(),
     );
 
@@ -427,37 +468,35 @@ class MessageService with ChangeNotifier {
     bool updated = false;
     ConversationModel? targetConversation;
 
-    // Find the conversation containing the optimistic message
+    _logger.i('Attempting to update optimistic message $tempId. Server data: ${jsonEncode(serverMessage.toJson())}', tag: 'MessageService');
+
+    final confirmedMessage = serverMessage.copyWith(
+      isOffline: false,
+      delivered: false,
+    );
+
     for (var conversation in _conversations.values) {
-      final index = conversation.messages.indexWhere((m) => m.id == tempId);
+      final index = conversation.messages.indexWhere((m) => m.id == tempId && m.isOffline);
       if (index != -1) {
-        // Remove the optimistic message by tempId
         conversation.messages.removeAt(index);
-        // Add the confirmed message from the server
-        conversation.messages.add(serverMessage); 
+        conversation.messages.add(confirmedMessage);
         targetConversation = conversation;
         updated = true;
         break;
       }
     }
 
-    // Log server message details before update attempt
-    _logger.i('Attempting to update optimistic message $tempId. Server data: ${jsonEncode(serverMessage.toJson())}', tag: 'MessageService'); 
-
     if (updated && targetConversation != null) {
-      // Sort messages: oldest first, handle null timestamps
       targetConversation.messages.sort((a, b) {
          final aTime = a.timestamp ?? DateTime.fromMillisecondsSinceEpoch(0);
          final bTime = b.timestamp ?? DateTime.fromMillisecondsSinceEpoch(0);
          return aTime.compareTo(bTime);
       });
-      // Ensure the map is updated *before* notifying listeners
       _saveConversations(); 
-      // Notify listeners AFTER state is fully updated
-      _logger.i('Pushing updated message ${serverMessage.id} to stream.', tag: 'MessageService');
-      _messageController.add(serverMessage); 
+      _logger.i('Pushing confirmed message ${confirmedMessage.id} (was $tempId) to stream.', tag: 'MessageService');
+      _messageController.add(confirmedMessage); 
       notifyListeners(); 
-      _logger.i('Updated optimistic message $tempId with server ID ${serverMessage.id}', tag: 'MessageService');
+      _logger.i('Updated optimistic message $tempId with server ID ${confirmedMessage.id}, marked as online.', tag: 'MessageService');
     } else {
       _logger.w('Could not find optimistic message with temp ID $tempId to update.', tag: 'MessageService');
     }
@@ -472,10 +511,15 @@ class MessageService with ChangeNotifier {
       final index = conversation.messages.indexWhere((m) => m.id == tempId);
       if (index != -1) {
         if (!conversation.messages[index].error) {
-          conversation.messages[index].error = true;
-          conversation.messages[index].errorMessage = errorMessage;
+          final failedMessage = conversation.messages[index].copyWith(
+            error: true,
+            errorMessage: errorMessage,
+            isOffline: true,
+          );
+          conversation.messages[index] = failedMessage;
+
           targetConversation = conversation;
-          targetMessage = conversation.messages[index];
+          targetMessage = failedMessage;
           updated = true;
           break;
         }
@@ -488,7 +532,7 @@ class MessageService with ChangeNotifier {
       notifyListeners();
       _logger.i('Marked optimistic message $tempId as failed.', tag: 'MessageService');
     } else {
-      _logger.w('Could not find optimistic message with temp ID $tempId to mark as failed.', tag: 'MessageService');
+      _logger.w('Could not find optimistic message with temp ID $tempId to mark as failed, or it was already marked.', tag: 'MessageService');
     }
   }
 
