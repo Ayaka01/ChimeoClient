@@ -21,8 +21,8 @@ class UserProfileScreenState extends State<UserProfileScreen> {
   @override
   void initState() {
     super.initState();
-    _authService = Provider.of<AuthService>(context, listen: false);
-    _messageService = Provider.of<MessageService>(context, listen: false);
+    _authService = context.read<AuthService>();
+    _messageService = context.read<MessageService>();
   }
 
   Future<void> _signOut() async {
@@ -58,7 +58,7 @@ class UserProfileScreenState extends State<UserProfileScreen> {
 
       try {
         if(!mounted) return;
-        await _authService.signOut(context);
+        await _authService.signOut();
 
         if (!mounted) return;
 
@@ -170,9 +170,8 @@ class UserProfileScreenState extends State<UserProfileScreen> {
                   children: [
                     UserAvatar(
                       displayName: currentUser.displayName,
-                      avatarUrl: currentUser.avatarUrl,
                       size: 80,
-                      backgroundColor: AppColors.primary.withOpacity(0.1),
+                      backgroundColor: AppColors.primary.withAlpha((255 * 0.05).round()),
                       textColor: AppColors.primary,
                     ),
 

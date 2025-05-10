@@ -1,116 +1,115 @@
-// lib/repositories/message_repository.dart
+import 'dart:async';
 import 'dart:convert';
-import 'package:http/http.dart' as http;
-import 'package:web_socket_channel/web_socket_channel.dart';
+// import 'package:http/http.dart' as http; // Remove http
+import 'package:dio/dio.dart'; // Import dio
+import 'package:simple_messenger/utils/exceptions.dart';
 import '../config/api_config.dart';
 import '../models/message_model.dart';
-import 'base_repository.dart';
+// import 'base_repository.dart'; // Remove base repository
+import '../utils/result.dart';
+import '../utils/logger.dart';
+import '../utils/dio_client.dart'; // Import global dio
 
-/// Repository for handling message-related data access
-class MessageRepository extends BaseRepository {
-  /// Singleton instance
-  static final MessageRepository _instance = MessageRepository._internal();
-  
-  /// WebSocket channel for real-time messages
-  WebSocketChannel? _wsChannel;
-  
-  /// Private constructor
-  MessageRepository._internal();
-  
-  /// Factory constructor to return the singleton instance
-  factory MessageRepository() => _instance;
-  
-  /// Connect to WebSocket for real-time messaging
-  Future<WebSocketChannel?> connectToWebSocket(String username, String token) async {
-    return await executeSafe<WebSocketChannel>(() async {
-      final wsUrl = '${ApiConfig.wsUrl}${ApiConfig.messagesPath}/ws/$username';
-      
-      // Add authentication token to the WebSocket connection
-      final uri = Uri.parse(wsUrl);
-      final uriWithAuth = uri.replace(
-        queryParameters: {'token': token},
+// class MessageRepository extends BaseRepository {
+class MessageRepository {
+  // static final MessageRepository _instance = MessageRepository._internal();
+  // factory MessageRepository() => _instance;
+  final Logger _logger = Logger();
+  final Dio _dio = dio; // Use global dio
+
+  // Remove internal constructor if not singleton
+  // MessageRepository._internal();
+
+  // Constructor (can be default or accept Dio if needed later)
+  MessageRepository();
+
+  Future<Result<void>> markMessageAsDelivered(String messageId) async {
+    _logger.d('Marking message $messageId as delivered (HTTP)', tag: 'MessageRepository');
+    try {
+      final response = await _dio.post(
+        '${ApiConfig.messagesPath}/delivered/$messageId',
       );
 
-      final channel = WebSocketChannel.connect(uriWithAuth);
-      _wsChannel = channel;
-      return channel;
-    });
-  }
-  
-  /// Close WebSocket connection
-  void closeWebSocket() {
-    _wsChannel?.sink.close();
-    _wsChannel = null;
-  }
-  
-  /// Send a message through WebSocket
-  void sendWebSocketMessage(Map<String, dynamic> data) {
-    if (_wsChannel != null) {
-      _wsChannel!.sink.add(json.encode(data));
+      // Dio throws for non-200 status codes by default
+      _logger.i('Message $messageId marked as delivered successfully', tag: 'MessageRepository');
+      return Result.success(null); // Return success with null value for void
+
+    } on DioException catch (e) {
+      _logger.e('DioException marking message $messageId delivered', error: e, tag: 'MessageRepository');
+      // Use the centralized mapping function
+      return Result.failure(mapDioExceptionToApiException(e));
+    } catch (e) {
+      _logger.e('Unexpected error marking message $messageId delivered', error: e, tag: 'MessageRepository');
+      if (e is Exception) {
+         return Result.failure(e);
+      }
+      return Result.failure(RepositoryException('Failed to mark message delivered: ${e.toString()}'));
     }
   }
-  
-  /// Send typing indicator
-  void sendTypingIndicator(String recipientId, bool isTyping, String token) {
-    sendWebSocketMessage({
-      'type': 'typing_indicator',
-      'data': {
-        'recipient': recipientId,
-        'is_typing': isTyping
-      }
-    });
-  }
-  
-  /// Send message to server
-  Future<MessageModel?> sendMessage(String recipientId, String text, String token) async {
-    return await executeSafe<MessageModel>(() async {
-      final response = await http.post(
-        Uri.parse('${ApiConfig.baseUrl}${ApiConfig.messagesPath}/'),
-        headers: {
-          'Authorization': 'Bearer $token',
-          'Content-Type': 'application/json',
-        },
-        body: json.encode({'recipient_username': recipientId, 'text': text}),
+
+  Future<Result<List<MessageModel>>> getPendingMessages() async {
+    _logger.d('Getting pending messages (HTTP)', tag: 'MessageRepository');
+     try {
+        final response = await _dio.get(
+          '${ApiConfig.messagesPath}/pending',
       );
 
-      if (response.statusCode == 200) {
-        return MessageModel.fromJson(json.decode(response.body));
+        if (response.statusCode == 200 && response.data is List) {
+            final List<dynamic> data = response.data;
+        final messages = data.map((json) => MessageModel.fromJson(json)).toList();
+        _logger.i('Fetched ${messages.length} pending messages successfully', tag: 'MessageRepository');
+            return Result.success(messages);
+        } else {
+             _logger.w('Get pending messages returned non-200 or invalid data: ${response.statusCode}', tag: 'MessageRepository');
+             // Throw ApiException for consistency
+             throw ApiException(message: 'Failed to get pending messages: Unexpected response format', statusCode: response.statusCode);
+        }
+
+     } on DioException catch (e) {
+        _logger.e('DioException getting pending messages', error: e, tag: 'MessageRepository');
+         // Use the centralized mapping function
+        return Result.failure(mapDioExceptionToApiException(e));
+     } catch (e) {
+       _logger.e('Unexpected error getting pending messages', error: e, tag: 'MessageRepository');
+       if (e is Exception) {
+          return Result.failure(e);
+       }
+       return Result.failure(RepositoryException('Failed to get pending messages: ${e.toString()}'));
       }
-      
-      throw Exception('Failed to send message: ${response.statusCode}');
-    });
   }
-  
-  /// Mark message as delivered
-  Future<bool> markMessageAsDelivered(String messageId, String token) async {
-    return await executeSafeBool(() async {
-      final response = await http.post(
-        Uri.parse('${ApiConfig.baseUrl}${ApiConfig.messagesPath}/delivered/$messageId'),
-        headers: {'Authorization': 'Bearer $token'},
+
+  Future<Result<MessageModel>> sendMessageViaHttp(String recipientId, String text) async {
+    _logger.d('Sending message to $recipientId via HTTP', tag: 'MessageRepository');
+    try {
+      _logger.d('Sending message via HTTP - recipientId: $recipientId, text: "$text"');
+      final response = await _dio.post(
+        '${ApiConfig.messagesPath}/', // Use relative path
+        data: json.encode({
+          'recipient_username': recipientId,
+          'text': text,
+        }),
       );
 
-      if (response.statusCode != 200) {
-        throw Exception('Failed to mark message as delivered: ${response.statusCode}');
+      if (response.statusCode == 200 && response.data is Map<String, dynamic>) {
+          final sentMessage = MessageModel.fromJson(response.data);
+          _logger.i('Message sent successfully via HTTP, ID: ${sentMessage.id}', tag: 'MessageRepository');
+          return Result.success(sentMessage);
+      } else {
+          _logger.w('Send message returned non-200 or invalid data: ${response.statusCode}', tag: 'MessageRepository');
+          // Throw ApiException for consistency
+          throw ApiException(message: 'Failed to send message: Unexpected response format', statusCode: response.statusCode);
       }
-    });
-  }
-  
-  /// Get pending messages
-  Future<List<MessageModel>> getPendingMessages(String token) async {
-    final result = await executeSafe<List<MessageModel>>(() async {
-      final response = await http.get(
-        Uri.parse('${ApiConfig.baseUrl}${ApiConfig.messagesPath}/pending'),
-        headers: {'Authorization': 'Bearer $token'},
-      );
 
-      if (response.statusCode == 200) {
-        final List<dynamic> data = json.decode(response.body);
-        return data.map((json) => MessageModel.fromJson(json)).toList();
+    } on DioException catch (e) {
+      _logger.e('DioException sending message', error: e, tag: 'MessageRepository');
+      // Use the centralized mapping function
+      return Result.failure(mapDioExceptionToApiException(e));
+    } catch (e) {
+      _logger.e('Unexpected error sending message', error: e, tag: 'MessageRepository');
+      if (e is Exception) {
+         return Result.failure(e);
       }
-      
-      throw Exception('Failed to get pending messages: ${response.statusCode}');
-    });
-    
-    return result ?? [];
+      return Result.failure(RepositoryException('Failed to send message: ${e.toString()}'));
+    }
   }
-} 
+}

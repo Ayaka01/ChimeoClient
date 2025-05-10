@@ -1,10 +1,10 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
-import '../repositories/storage_repository.dart';
 import '../utils/error_handler.dart';
+import 'local_storage_service.dart';
 
 class OfflineQueueService with ChangeNotifier {
-  final StorageRepository _storageRepo;
+  final LocalStorageService _storageService;
   final ErrorHandler _errorHandler = ErrorHandler();
   List<Map<String, dynamic>> _offlineQueue = [];
   
@@ -16,26 +16,30 @@ class OfflineQueueService with ChangeNotifier {
   List<Map<String, dynamic>> get offlineQueue => List.unmodifiable(_offlineQueue);
   Stream<Map<String, dynamic>> get queueItemStream => _queueItemController.stream;
   
-  OfflineQueueService(this._storageRepo) {
+  OfflineQueueService(this._storageService) {
     _loadOfflineQueue();
   }
   
   // Load offline message queue
   Future<void> _loadOfflineQueue() async {
     try {
-      final queue = await _storageRepo.getOfflineQueue();
-      _offlineQueue = queue;
+      final queue = await _storageService.getOfflineQueue();
+      _offlineQueue = queue ?? [];
       notifyListeners();
     } catch (e, stackTrace) {
       _errorHandler.logError(e, stackTrace: stackTrace);
+      _offlineQueue = [];
     }
   }
   
   // Save offline queue
   Future<bool> _saveOfflineQueue() async {
     try {
-      await _storageRepo.saveOfflineQueue(_offlineQueue);
-      return true;
+      final success = await _storageService.saveOfflineQueue(_offlineQueue);
+      if (!success) {
+         _errorHandler.logError('Failed to save offline queue');
+      }
+      return success;
     } catch (e, stackTrace) {
       _errorHandler.logError(e, stackTrace: stackTrace);
       return false;
@@ -90,9 +94,12 @@ class OfflineQueueService with ChangeNotifier {
   Future<bool> clearQueue() async {
     try {
       _offlineQueue = [];
-      await _storageRepo.clearOfflineQueue();
+      final success = await _storageService.clearOfflineQueue();
+      if (!success) {
+         _errorHandler.logError('Failed to clear offline queue');
+      }
       notifyListeners();
-      return true;
+      return success;
     } catch (e, stackTrace) {
       _errorHandler.logError(e, stackTrace: stackTrace);
       return false;

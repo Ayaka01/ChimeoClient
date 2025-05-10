@@ -7,8 +7,6 @@ class ConversationModel {
   final List<MessageModel> messages;
   final DateTime? lastMessageTime;
   final String? friendAvatarUrl;
-  final bool isTyping;
-  final DateTime? typingTimestamp;
   final bool isOnline;
 
   ConversationModel({
@@ -17,8 +15,6 @@ class ConversationModel {
     required this.messages,
     this.lastMessageTime,
     this.friendAvatarUrl,
-    this.isTyping = false,
-    this.typingTimestamp,
     this.isOnline = false,
   });
 
@@ -28,9 +24,13 @@ class ConversationModel {
       return null;
     }
 
-    // Sort messages by timestamp (newest first)
+    // Sort messages by timestamp (newest first), handle nulls (treat as oldest)
     final sortedMessages = List<MessageModel>.from(messages)
-      ..sort((a, b) => b.timestamp.compareTo(a.timestamp));
+      ..sort((a, b) {
+        final aTime = a.timestamp ?? DateTime.fromMillisecondsSinceEpoch(0);
+        final bTime = b.timestamp ?? DateTime.fromMillisecondsSinceEpoch(0);
+        return bTime.compareTo(aTime); // Newest first
+      });
 
     return sortedMessages.first;
   }
@@ -64,17 +64,6 @@ class ConversationModel {
     }
   }
 
-  // Search messages in conversation
-  List<MessageModel> searchMessages(String query) {
-    if (query.isEmpty) return [];
-    
-    final lowerQuery = query.toLowerCase();
-    
-    return messages.where((message) => 
-      message.text.toLowerCase().contains(lowerQuery)
-    ).toList();
-  }
-
   // Factory method to create from JSON
   factory ConversationModel.fromJson(Map<String, dynamic> json) {
     final List<dynamic> messagesJson = json['messages'] ?? [];
@@ -89,10 +78,6 @@ class ConversationModel {
           ? DateTime.parse(json['last_message_time'])
           : null,
       friendAvatarUrl: json['friend_avatar_url'],
-      isTyping: json['is_typing'] ?? false,
-      typingTimestamp: json['typing_timestamp'] != null 
-          ? DateTime.parse(json['typing_timestamp']) 
-          : null,
       isOnline: json['is_online'] ?? false,
     );
   }
@@ -103,10 +88,9 @@ class ConversationModel {
       'friend_username': friendUsername,
       'friend_name': friendName,
       'messages': messages.map((message) => message.toJson()).toList(),
-      'last_message_time': lastMessage?.timestamp.toIso8601String(),
+      // Use null-aware operator for timestamp as well
+      'last_message_time': lastMessage?.timestamp?.toIso8601String(), 
       'friend_avatar_url': friendAvatarUrl,
-      'is_typing': isTyping,
-      'typing_timestamp': typingTimestamp?.toIso8601String(),
       'is_online': isOnline,
     };
   }
@@ -118,8 +102,6 @@ class ConversationModel {
     List<MessageModel>? messages,
     DateTime? lastMessageTime,
     String? friendAvatarUrl,
-    bool? isTyping,
-    DateTime? typingTimestamp,
     bool? isOnline,
   }) {
     return ConversationModel(
@@ -128,8 +110,6 @@ class ConversationModel {
       messages: messages ?? this.messages,
       lastMessageTime: lastMessageTime ?? this.lastMessageTime,
       friendAvatarUrl: friendAvatarUrl ?? this.friendAvatarUrl,
-      isTyping: isTyping ?? this.isTyping,
-      typingTimestamp: typingTimestamp ?? this.typingTimestamp,
       isOnline: isOnline ?? this.isOnline,
     );
   }

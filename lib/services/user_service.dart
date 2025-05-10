@@ -1,211 +1,107 @@
-// lib/services/user_service.dart
-import 'dart:convert';
-import 'package:http/http.dart' as http;
 import '../models/user_model.dart';
 import '../models/friend_request_model.dart';
-import '../config/api_config.dart';
 import 'auth_service.dart';
 import '../utils/logger.dart';
+import '../repositories/user_repository.dart';
+import '../utils/result.dart'; 
 
 class UserService {
   final AuthService _authService;
+  final UserRepository _userRepository; 
   final Logger _logger = Logger();
 
-  UserService(this._authService);
+  UserService(this._authService, this._userRepository);
 
-  // Search for users
+
   Future<List<UserModel>> searchUsers(String query) async {
-    try {
-      if (query.length < 3) return [];
+    _logger.d('Executing searchUsers with query: "$query"', tag: 'UserService');
+    final Result<List<UserModel>> result = await _userRepository.searchUsers(query);
 
-      final response = await http.get(
-        Uri.parse('${ApiConfig.baseUrl}${ApiConfig.usersPath}/search?q=$query'),
-        headers: {'Authorization': 'Bearer ${_authService.token}'},
-      );
-
-      if (response.statusCode == 200) {
-        final List<dynamic> data = json.decode(response.body);
-        return data.map((json) => UserModel.fromJson(json)).toList();
-      }
-
-      return [];
-    } catch (e) {
-      _logger.e('Error searching users', error: e, tag: 'UserService');
-      return [];
+    if (result.isSuccess) {
+       _logger.i('User search successful, found ${result.value.length} users', tag: 'UserService');
+      return result.value;
+    } else {
+      _logger.e('Error searching users via repository', error: result.error, tag: 'UserService');
+      throw result.error;
     }
   }
 
-  // Get user profile by username
-  Future<UserModel?> getUserProfile(String username) async {
-    try {
-      final response = await http.get(
-        Uri.parse('${ApiConfig.baseUrl}${ApiConfig.usersPath}/$username'),
-        headers: {'Authorization': 'Bearer ${_authService.token}'},
-      );
-
-      if (response.statusCode == 200) {
-        final userData = json.decode(response.body);
-        return UserModel.fromJson(userData);
-      }
-
-      return null;
-    } catch (e) {
-      _logger.e('Error getting user profile', error: e, tag: 'UserService');
-      return null;
-    }
-  }
-
-  // Get all friends
   Future<List<UserModel>> getFriends() async {
-    try {
-      final response = await http.get(
-        Uri.parse('${ApiConfig.baseUrl}${ApiConfig.usersPath}/friends'),
-        headers: {'Authorization': 'Bearer ${_authService.token}'},
-      );
+    _logger.d('Executing getFriends', tag: 'UserService');
+    final Result<List<UserModel>> result = await _userRepository.getFriends();
 
-      if (response.statusCode == 200) {
-        final List<dynamic> data = json.decode(response.body);
-        return data.map((json) => UserModel.fromJson(json)).toList();
-      }
-
-      return [];
-    } catch (e) {
-      _logger.e('Error getting friends', error: e, tag: 'UserService');
-      return [];
+    if (result.isSuccess) {
+      _logger.i('Get friends successful, found ${result.value.length} friends', tag: 'UserService');
+      return result.value;
+    } else {
+      _logger.e('Error getting friends via repository', error: result.error, tag: 'UserService');
+      throw result.error;
     }
   }
 
-  // Send friend request
   Future<bool> sendFriendRequest(String username) async {
-    final token = _authService.token;
-    if (token == null) {
-      _logger.w('Attempted to send friend request without auth token', tag: 'UserService');
-      throw Exception('Not authenticated');
-    }
-    
-    try {
-      final response = await http.post(
-        Uri.parse('${ApiConfig.baseUrl}${ApiConfig.usersPath}/friends/request'),
-        headers: {
-          'Authorization': 'Bearer $token',
-          'Content-Type': 'application/json',
-        },
-        body: json.encode({'username': username}),
-      );
+    _logger.d('Executing sendFriendRequest to username: $username', tag: 'UserService');
+    final Result<void> result = await _userRepository.sendFriendRequest(username);
 
-      if (response.statusCode == 200) {
-        _logger.i('Friend request sent successfully to $username', tag: 'UserService');
-        return true;
-      } else {
-        String errorMessage = 'Failed to send friend request (Code: ${response.statusCode})';
-        try {
-          final responseBody = json.decode(response.body);
-          if (responseBody is Map && responseBody.containsKey('detail')) {
-            errorMessage = responseBody['detail'];
-          }
-        } catch (e) {
-          _logger.w('Failed to parse error response body: ${response.body}', tag: 'UserService');
-          errorMessage += '\nResponse: ${response.body}';
-        }
-        _logger.e('Error sending friend request to $username: $errorMessage', tag: 'UserService');
-        throw Exception(errorMessage);
-      }
-    } catch (e) {
-      _logger.e('Error sending friend request to $username', error: e, tag: 'UserService');
-      rethrow;
+    if (result.isSuccess) {
+      _logger.i('Friend request sent successfully to $username via repository', tag: 'UserService');
+      return true;
+    } else {
+      _logger.e('Error sending friend request to $username via repository', error: result.error, tag: 'UserService');
+      throw result.error;
     }
   }
 
-  // Respond to friend request - returns true on success
-  Future<bool> respondToFriendRequest(
+  Future<void> respondToFriendRequest(
     String requestId,
     String action,
   ) async {
-    final token = _authService.token;
-    if (token == null) {
-       _logger.w('Attempted to respond to friend request without auth token', tag: 'UserService');
-       return false;
+    _logger.d('Executing respondToFriendRequest ID: $requestId, action: $action', tag: 'UserService');
+
+    if (action != 'accept' && action != 'reject') {
+        _logger.e('Invalid action for respondToFriendRequest: $action', tag: 'UserService');
+        throw ArgumentError('Action must be either \'accept\' or \'reject\'');
     }
-    try {
-      final response = await http.post(
-        Uri.parse('${ApiConfig.baseUrl}${ApiConfig.usersPath}/friends/respond'),
-        headers: {
-          'Authorization': 'Bearer $token',
-          'Content-Type': 'application/json',
-        },
-        body: json.encode({'request_id': requestId, 'action': action}),
-      );
 
-      // Check for successful status code (e.g., 200 OK or 204 No Content)
-      if (response.statusCode >= 200 && response.statusCode < 300) {
-         _logger.i('Successfully responded ($action) to friend request $requestId', tag: 'UserService');
-         return true; // Indicate success
-      } else {
-         // Log error with details if possible
-         String errorMessage = 'Failed to respond ($action) to friend request $requestId (Code: ${response.statusCode})';
-         try {
-           final responseBody = json.decode(response.body);
-           if (responseBody is Map && responseBody.containsKey('detail')) {
-             errorMessage = responseBody['detail'];
-           }
-         } catch (e) { /* Ignore parsing error */ }
-         _logger.e(errorMessage, tag: 'UserService');
-         // Optionally throw an exception here based on status code if needed
-         return false; // Indicate failure
-      }
+    final Result<void> result = await _userRepository.respondToFriendRequest(requestId, action);
 
-    } catch (e) {
-      _logger.e('Error responding to friend request $requestId ($action)', error: e, tag: 'UserService');
-      return false; // Indicate failure
+    if (result.isSuccess) {
+      _logger.i('Successfully responded ($action) to friend request $requestId via repository', tag: 'UserService');
+    } else {
+      _logger.e('Error responding to friend request $requestId ($action) via repository', error: result.error, tag: 'UserService');
+      throw result.error;
     }
   }
 
-  // Get received friend requests
   Future<List<FriendRequestModel>> getReceivedFriendRequests() async {
-    try {
-      String url = '${ApiConfig.baseUrl}${ApiConfig.usersPath}/friends/requests/received';
+    _logger.d('Executing getReceivedFriendRequests', tag: 'UserService');
+    final Result<List<FriendRequestModel>> result = await _userRepository.getReceivedFriendRequests();
 
-      final response = await http.get(
-        Uri.parse(url),
-        headers: {'Authorization': 'Bearer ${_authService.token}'},
-      );
-
-      if (response.statusCode == 200) {
-        final List<dynamic> data = json.decode(response.body);
-        return data.map((json) => FriendRequestModel.fromJson(json)).toList();
-      }
-
-      return [];
-    } catch (e) {
-      _logger.e('Error getting received friend requests', error: e, tag: 'UserService');
-      return [];
+    if (result.isSuccess) {
+       _logger.i('Get received requests successful, found ${result.value.length} requests', tag: 'UserService');
+      return result.value;
+    } else {
+      _logger.e('Error getting received friend requests via repository', error: result.error, tag: 'UserService');
+      throw result.error;
     }
   }
 
-  // Get sent friend requests
   Future<List<FriendRequestModel>> getSentFriendRequests({
-    String? status,
+    String? status, // Keep status param if future filtering is planned
   }) async {
-    try {
-      String url = '${ApiConfig.baseUrl}${ApiConfig.usersPath}/friends/requests/sent';
-      if (status != null) {
-        url += '?status=$status';
-      }
+    _logger.d('Executing getSentFriendRequests', tag: 'UserService');
+    if (status != null) {
+       _logger.d('Filtering sent requests by status: $status', tag: 'UserService');
+    }
+    
+    final Result<List<FriendRequestModel>> result = await _userRepository.getSentFriendRequests();
 
-      final response = await http.get(
-        Uri.parse(url),
-        headers: {'Authorization': 'Bearer ${_authService.token}'},
-      );
-
-      if (response.statusCode == 200) {
-        final List<dynamic> data = json.decode(response.body);
-        return data.map((json) => FriendRequestModel.fromJson(json)).toList();
-      }
-
-      return [];
-    } catch (e) {
-      _logger.e('Error getting sent friend requests', error: e, tag: 'UserService');
-      return [];
+    if (result.isSuccess) {
+      _logger.i('Get sent requests successful, found ${result.value.length} requests', tag: 'UserService');
+      return result.value;
+    } else {
+      _logger.e('Error getting sent friend requests via repository', error: result.error, tag: 'UserService');
+      throw result.error;
     }
   }
 }

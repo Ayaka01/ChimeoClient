@@ -1,132 +1,184 @@
 import 'dart:convert';
-import 'package:http/http.dart' as http;
+// import 'package:http/http.dart' as http; // Remove http
+import 'package:dio/dio.dart'; // Import dio
+import 'package:simple_messenger/utils/exceptions.dart';
 import '../config/api_config.dart';
 import '../models/user_model.dart';
-import 'base_repository.dart';
+import '../models/friend_request_model.dart';
+// import 'base_repository.dart'; // Remove BaseRepository
+import '../utils/result.dart';
+import '../utils/logger.dart';
+import '../utils/dio_client.dart'; // Import global dio
 
-/// Repository for handling user-related data access
-class UserRepository extends BaseRepository {
-  /// Singleton instance
-  static final UserRepository _instance = UserRepository._internal();
-  
-  /// Private constructor
-  UserRepository._internal();
-  
-  /// Factory constructor to return the singleton instance
-  factory UserRepository() => _instance;
-  
-  /// Get user profile by username
-  Future<UserModel?> getUserProfile(String username, String token) async {
-    return await executeSafe<UserModel>(() async {
-      final response = await http.get(
-        Uri.parse('${ApiConfig.baseUrl}${ApiConfig.usersPath}/$username'),
-        headers: {'Authorization': 'Bearer $token'},
+// class UserRepository extends BaseRepository {
+class UserRepository {
+  // static final UserRepository _instance = UserRepository._internal();
+  final Logger _logger = Logger();
+  final Dio _dio = dio; // Use global dio
+
+  // Remove internal constructor if not singleton
+  // UserRepository._internal();
+  // factory UserRepository() => _instance;
+
+  // Constructor (can be default or accept Dio if needed later)
+  UserRepository();
+
+  Future<Result<List<UserModel>>> searchUsers(String query) async {
+    _logger.i('Requesting user search with query: "$query"', tag: 'UserRepository');
+    try {
+      final response = await _dio.get(
+        '${ApiConfig.usersPath}/search', 
+        queryParameters: {'q': query},
       );
 
-      if (response.statusCode == 200) {
-        return UserModel.fromJson(json.decode(response.body));
+      if (response.statusCode == 200 && response.data is List) {
+          final List<dynamic> data = response.data;
+          _logger.i('User search successful', tag: 'UserRepository');
+          return Result.success(data.map((json) => UserModel.fromJson(json)).toList());
+      } else {
+           _logger.w('Search users returned non-200 or invalid data: ${response.statusCode}', tag: 'UserRepository');
+           throw ApiException(message: 'User search failed: Unexpected response format', statusCode: response.statusCode);
       }
-      
-      throw Exception('Failed to get user profile: ${response.statusCode}');
-    });
+
+    } on DioException catch (e) {
+        _logger.e('DioException during user search', error: e, tag: 'UserRepository');
+        return Result.failure(mapDioExceptionToApiException(e));
+    } catch (e) {
+        _logger.e('Unexpected error during user search', error: e, tag: 'UserRepository');
+        if (e is Exception) {
+           return Result.failure(e);
+        }
+        return Result.failure(RepositoryException('User search failed: ${e.toString()}'));
+    }
   }
-  
-  /// Search users by query
-  Future<List<UserModel>> searchUsers(String query, String token) async {
-    final result = await executeSafe<List<UserModel>>(() async {
-      final response = await http.get(
-        Uri.parse('${ApiConfig.baseUrl}${ApiConfig.usersPath}/search?q=$query'),
-        headers: {'Authorization': 'Bearer $token'},
+
+  Future<Result<List<UserModel>>> getFriends() async {
+    _logger.i('Requesting friends list', tag: 'UserRepository');
+    try {
+      final response = await _dio.get(
+        '${ApiConfig.usersPath}/friends',
       );
 
-      if (response.statusCode == 200) {
-        final List<dynamic> data = json.decode(response.body);
-        return data.map((json) => UserModel.fromJson(json)).toList();
+      if (response.statusCode == 200 && response.data is List) {
+          final List<dynamic> data = response.data;
+          _logger.i('Friends list fetch successful', tag: 'UserRepository');
+          return Result.success(data.map((json) => UserModel.fromJson(json)).toList());
+      } else {
+          _logger.w('Get friends returned non-200 or invalid data: ${response.statusCode}', tag: 'UserRepository');
+          throw ApiException(message: 'Get friends failed: Unexpected response format', statusCode: response.statusCode);
       }
-      
-      throw Exception('Failed to search users: ${response.statusCode}');
-    });
-    
-    return result ?? [];
-  }
-  
-  /// Get friends list
-  Future<List<UserModel>> getFriends(String token) async {
-    final result = await executeSafe<List<UserModel>>(() async {
-      final response = await http.get(
-        Uri.parse('${ApiConfig.baseUrl}${ApiConfig.usersPath}/friends'),
-        headers: {'Authorization': 'Bearer $token'},
-      );
 
-      if (response.statusCode == 200) {
-        final List<dynamic> data = json.decode(response.body);
-        return data.map((json) => UserModel.fromJson(json)).toList();
-      }
-      
-      throw Exception('Failed to get friends: ${response.statusCode}');
-    });
-    
-    return result ?? [];
+    } on DioException catch (e) {
+        _logger.e('DioException fetching friends list', error: e, tag: 'UserRepository');
+        return Result.failure(mapDioExceptionToApiException(e));
+    } catch (e) {
+        _logger.e('Unexpected error fetching friends', error: e, tag: 'UserRepository');
+        if (e is Exception) {
+           return Result.failure(e);
+        }
+        return Result.failure(RepositoryException('Get friends failed: ${e.toString()}'));
+    }
   }
-  
-  /// Get friend requests
-  Future<List<UserModel>> getFriendRequests(String token) async {
-    final result = await executeSafe<List<UserModel>>(() async {
-      final response = await http.get(
-        Uri.parse('${ApiConfig.baseUrl}${ApiConfig.usersPath}/friend-requests'),
-        headers: {'Authorization': 'Bearer $token'},
-      );
 
-      if (response.statusCode == 200) {
-        final List<dynamic> data = json.decode(response.body);
-        return data.map((json) => UserModel.fromJson(json)).toList();
-      }
-      
-      throw Exception('Failed to get friend requests: ${response.statusCode}');
-    });
-    
-    return result ?? [];
-  }
-  
-  /// Send friend request
-  Future<bool> sendFriendRequest(String username, String token) async {
-    return await executeSafeBool(() async {
-      final response = await http.post(
-        Uri.parse('${ApiConfig.baseUrl}${ApiConfig.usersPath}/friend-request/$username'),
-        headers: {'Authorization': 'Bearer $token'},
+  Future<Result<void>> sendFriendRequest(String username) async {
+    _logger.i('Requesting send friend request to: $username', tag: 'UserRepository');
+    try {
+      final response = await _dio.post(
+        '${ApiConfig.usersPath}/friends/request',
+        data: json.encode({"username": username}),
       );
+      // Assuming 200 or 201 for success (backend might return different)
+      // Dio throws for non-2xx, so reaching here implies success
+       _logger.i('Send friend request successful', tag: 'UserRepository');
+       return Result.success(null);
 
-      if (response.statusCode != 200) {
-        throw Exception('Failed to send friend request: ${response.statusCode}');
-      }
-    });
+    } on DioException catch (e) {
+        _logger.e('DioException sending friend request', error: e, tag: 'UserRepository');
+        return Result.failure(mapDioExceptionToApiException(e));
+    } catch (e) {
+         _logger.e('Unexpected error sending friend request', error: e, tag: 'UserRepository');
+         if (e is Exception) {
+            return Result.failure(e);
+         }
+         return Result.failure(RepositoryException('Send friend request failed: ${e.toString()}'));
+    }
   }
-  
-  /// Accept friend request
-  Future<bool> acceptFriendRequest(String username, String token) async {
-    return await executeSafeBool(() async {
-      final response = await http.post(
-        Uri.parse('${ApiConfig.baseUrl}${ApiConfig.usersPath}/friend-request/$username/accept'),
-        headers: {'Authorization': 'Bearer $token'},
+
+  Future<Result<void>> respondToFriendRequest(
+      String requestId,
+      String action,
+      ) async {
+    _logger.i('Requesting respond ($action) to friend request ID: $requestId', tag: 'UserRepository');
+    try {
+       final response = await _dio.post(
+        '${ApiConfig.usersPath}/friends/respond',
+        data: json.encode({"request_id": requestId, "action": action}),
       );
+      // Dio throws for non-2xx
+      _logger.i('Respond friend request successful', tag: 'UserRepository');
+      return Result.success(null);
 
-      if (response.statusCode != 200) {
-        throw Exception('Failed to accept friend request: ${response.statusCode}');
-      }
-    });
+    } on DioException catch (e) {
+        _logger.e('DioException responding to friend request $requestId', error: e, tag: 'UserRepository');
+        return Result.failure(mapDioExceptionToApiException(e));
+    } catch (e) {
+         _logger.e('Unexpected error responding to friend request $requestId', error: e, tag: 'UserRepository');
+         if (e is Exception) {
+            return Result.failure(e);
+         }
+         return Result.failure(RepositoryException('Respond friend request failed: ${e.toString()}'));
+    }
   }
-  
-  /// Reject friend request
-  Future<bool> rejectFriendRequest(String username, String token) async {
-    return await executeSafeBool(() async {
-      final response = await http.post(
-        Uri.parse('${ApiConfig.baseUrl}${ApiConfig.usersPath}/friend-request/$username/reject'),
-        headers: {'Authorization': 'Bearer $token'},
+
+  Future<Result<List<FriendRequestModel>>> getReceivedFriendRequests() async {
+    _logger.i('Requesting received friend requests', tag: 'UserRepository');
+    try {
+      final response = await _dio.get(
+        '${ApiConfig.usersPath}/friends/requests/received',
       );
-
-      if (response.statusCode != 200) {
-        throw Exception('Failed to reject friend request: ${response.statusCode}');
+      if (response.statusCode == 200 && response.data is List) {
+        final List<dynamic> data = response.data;
+        _logger.i('Received friend requests fetch successful', tag: 'UserRepository');
+        return Result.success(data.map((json) => FriendRequestModel.fromJson(json)).toList());
+      } else {
+         _logger.w('Get received requests returned non-200 or invalid data: ${response.statusCode}', tag: 'UserRepository');
+         throw ApiException(message: 'Get received requests failed: Unexpected response format', statusCode: response.statusCode);
       }
-    });
+    } on DioException catch (e) {
+       _logger.e('DioException fetching received friend requests', error: e, tag: 'UserRepository');
+        return Result.failure(mapDioExceptionToApiException(e));
+    } catch (e) {
+        _logger.e('Unexpected error fetching received requests', error: e, tag: 'UserRepository');
+        if (e is Exception) {
+           return Result.failure(e);
+        }
+        return Result.failure(RepositoryException('Get received requests failed: ${e.toString()}'));
+    }
   }
-} 
+
+  Future<Result<List<FriendRequestModel>>> getSentFriendRequests() async {
+    _logger.i('Requesting sent friend requests', tag: 'UserRepository');
+     try {
+        final response = await _dio.get(
+          '${ApiConfig.usersPath}/friends/requests/sent',
+        );
+       if (response.statusCode == 200 && response.data is List) {
+          final List<dynamic> data = response.data;
+          _logger.i('Sent friend requests fetch successful', tag: 'UserRepository');
+          return Result.success(data.map((json) => FriendRequestModel.fromJson(json)).toList());
+       } else {
+           _logger.w('Get sent requests returned non-200 or invalid data: ${response.statusCode}', tag: 'UserRepository');
+           throw ApiException(message: 'Get sent requests failed: Unexpected response format', statusCode: response.statusCode);
+       }
+    } on DioException catch (e) {
+         _logger.e('DioException fetching sent friend requests', error: e, tag: 'UserRepository');
+          return Result.failure(mapDioExceptionToApiException(e));
+    } catch (e) {
+         _logger.e('Unexpected error fetching sent requests', error: e, tag: 'UserRepository');
+         if (e is Exception) {
+            return Result.failure(e);
+         }
+          return Result.failure(RepositoryException('Get sent requests failed: ${e.toString()}'));
+    }
+  }
+}

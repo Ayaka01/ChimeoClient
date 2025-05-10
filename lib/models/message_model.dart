@@ -4,9 +4,8 @@ class MessageModel {
   final String senderId;
   final String recipientId;
   final String text;
-  final DateTime timestamp;
+  DateTime? timestamp;
   bool delivered;
-  bool read;
   bool isOffline;
   bool error;
   String? errorMessage;
@@ -16,9 +15,8 @@ class MessageModel {
     required this.senderId,
     required this.recipientId,
     required this.text,
-    required this.timestamp,
+    this.timestamp,
     this.delivered = false,
-    this.read = false,
     this.isOffline = false,
     this.error = false,
     this.errorMessage,
@@ -30,10 +28,8 @@ class MessageModel {
       senderId: json['sender_username'],
       recipientId: json['recipient_username'],
       text: json['text'],
-      timestamp: DateTime.parse(json['created_at']),
-      delivered: json['delivered'] ?? false,
-      read: json['read'] ?? false,
-      isOffline: json['is_offline'] ?? false,
+      timestamp: json['created_at'] != null ? DateTime.parse(json['created_at']) : null,
+      delivered: json['is_delivered'] ?? false,
       error: json['error'] ?? false,
       errorMessage: json['error_message'],
     );
@@ -45,9 +41,8 @@ class MessageModel {
       'sender_username': senderId,
       'recipient_username': recipientId,
       'text': text,
-      'created_at': timestamp.toIso8601String(),
+      'created_at': timestamp?.toIso8601String(),
       'delivered': delivered,
-      'read': read,
       'is_offline': isOffline,
       'error': error,
       'error_message': errorMessage,
@@ -62,7 +57,6 @@ class MessageModel {
     String? text,
     DateTime? timestamp,
     bool? delivered,
-    bool? read,
     bool? isOffline,
     bool? error,
     String? errorMessage,
@@ -74,7 +68,6 @@ class MessageModel {
       text: text ?? this.text,
       timestamp: timestamp ?? this.timestamp,
       delivered: delivered ?? this.delivered,
-      read: read ?? this.read,
       isOffline: isOffline ?? this.isOffline,
       error: error ?? this.error,
       errorMessage: errorMessage ?? this.errorMessage,

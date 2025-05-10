@@ -5,6 +5,9 @@ import '../services/user_service.dart';
 import '../models/user_model.dart';
 import 'package:simple_messenger/constants/colors.dart';
 import '../components/user_avatar.dart';
+import '../components/error_display.dart';
+import '../utils/logger.dart';
+import 'package:simple_messenger/utils/exceptions.dart';
 
 class SearchUsersScreen extends StatefulWidget {
   const SearchUsersScreen({super.key});
@@ -18,12 +21,16 @@ class SearchUsersScreenState extends State<SearchUsersScreen> {
   late UserService _userService;
   List<UserModel> _searchResults = [];
   bool _isSearching = false;
+  String? _searchError;
+  String? _validationError;
   final Map<String, bool> _requestInProgress = {};
+  final Set<String> _sentRequestsUsernames = {};
+  final Logger _logger = Logger();
 
   @override
   void initState() {
     super.initState();
-    _userService = Provider.of<UserService>(context, listen: false);
+    _userService = context.read<UserService>();
   }
 
   @override
@@ -38,67 +45,117 @@ class SearchUsersScreenState extends State<SearchUsersScreen> {
     if (query.length < 3) {
       if (!mounted) return;
       
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Ingresa al menos 3 caracteres para buscar'),
-        ),
-      );
+      setState(() {
+        _validationError = 'Ingresa al menos 3 caracteres para buscar';
+        _isSearching = false;
+        _searchResults = [];
+        _searchError = null;
+      });
       return;
     }
 
+    _logger.d('Searching users with query: "$query"', tag: 'SearchUsersScreen');
     setState(() {
+      _validationError = null;
       _isSearching = true;
-    });
-
-    final results = await _userService.searchUsers(query);
-
-    if (!mounted) return;
-    
-    setState(() {
-      _searchResults = results;
-      _isSearching = false;
-    });
-  }
-
-  Future<void> _sendFriendRequest(UserModel user) async {
-    if (_requestInProgress[user.username] == true) return;
-
-    setState(() {
-      _requestInProgress[user.username] = true;
+      _searchError = null;
     });
 
     try {
-      await _userService.sendFriendRequest(user.username);
-
+      final results = await _userService.searchUsers(query);
       if (!mounted) return;
       
       setState(() {
-        _searchResults.removeWhere((searchResult) => searchResult.username == user.username);
+        _searchResults = results;
+        _isSearching = false;
       });
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Solicitud enviada a ${user.displayName}'),
-          backgroundColor: Colors.green,
-        ),
-      );
-
+      _logger.i('User search returned ${results.length} results', tag: 'SearchUsersScreen');
+      
+    } on NotAuthorizedException catch(e) {
+      _logger.e('Authorization error during user search', error: e, tag: 'SearchUsersScreen');
+       if (!mounted) return;
+      setState(() {
+        _isSearching = false;
+        _searchError = e.message;
+      });
     } catch (e) {
+      _logger.e('Error during user search', error: e, tag: 'SearchUsersScreen');
       if (!mounted) return;
       
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Error: ${e.toString()}'),
-          backgroundColor: Colors.red,
-        ),
-      );
+      setState(() {
+        _isSearching = false;
+        _searchError = e is Exception ? e.toString() : 'Error al buscar usuarios'; 
+      });
+    }
+  }
 
-    } finally {
-      if (mounted) {
-        setState(() {
-          _requestInProgress[user.username] = false;
-        });
-      }
+  Future<void> _sendFriendRequest(UserModel user) async {
+    final username = user.username;
+    if (_requestInProgress[username] == true || _sentRequestsUsernames.contains(username)) {
+        _logger.d('Send request to $username skipped (already in progress or sent)', tag: 'SearchUsersScreen');
+        return;
+    }
+    
+    _logger.d('Attempting to send friend request to $username', tag: 'SearchUsersScreen');
+    setState(() {
+      _requestInProgress[username] = true;
+    });
+    
+    String? errorTitle = "Error al enviar solicitud";
+    String errorMessage = "Ocurrió un error inesperado.";
+
+    try {
+      await _userService.sendFriendRequest(username);
+
+      _logger.i('Successfully sent friend request to $username', tag: 'SearchUsersScreen');
+      if (!mounted) return;
+      
+      setState(() {
+        _sentRequestsUsernames.add(username);
+        _requestInProgress.remove(username); 
+      });
+      return;
+
+    } on UserNotFoundException catch (e) {
+        errorMessage = e.message;
+    } on FriendshipExistsException catch (e) {
+        errorMessage = e.message;
+        if (mounted) setState(() => _sentRequestsUsernames.add(username));
+    } on FriendRequestExistsException catch (e) {
+        errorMessage = e.message;
+         if (mounted) setState(() => _sentRequestsUsernames.add(username));
+    } on CannotFriendSelfException catch (e) {
+        errorMessage = e.message;
+    } on NotAuthorizedException catch (e) {
+        errorMessage = e.message; 
+        errorTitle = "No autorizado";
+    } on Exception catch (e) {
+        _logger.e('Error sending friend request to $username', error: e, tag: 'SearchUsersScreen');
+        errorMessage = e.toString();
+    }
+
+    if (mounted) {
+       setState(() {
+         _requestInProgress[username] = false;
+       });
+       
+      showDialog(
+        context: context,
+        builder: (BuildContext dialogContext) {
+          return AlertDialog(
+            title: Text(errorTitle ?? 'Error'),
+            content: Text(errorMessage),
+            actions: <Widget>[
+              TextButton(
+                child: Text('OK'),
+                onPressed: () {
+                  Navigator.of(dialogContext).pop();
+                },
+              ),
+            ],
+          );
+        },
+      );
     }
   }
 
@@ -158,6 +215,17 @@ class SearchUsersScreenState extends State<SearchUsersScreen> {
   Widget _buildBodyContent() {
     if (_isSearching) {
       return Center(child: CircularProgressIndicator());
+    } else if (_searchError != null) {
+      return ErrorDisplay(
+        errorMessage: _searchError!,
+        onRetry: _searchUsers,
+      );
+    } else if (_validationError != null) {
+      return _buildInfoView(
+        icon: Icons.warning_amber_rounded,
+        message: _validationError!,
+        color: Colors.orange[700],
+      );
     } else if (_searchResults.isEmpty && _searchController.text.isEmpty) {
       return _buildSearchInstructions();
     } else if (_searchResults.isEmpty && _searchController.text.isNotEmpty) {
@@ -167,26 +235,43 @@ class SearchUsersScreenState extends State<SearchUsersScreen> {
     }
   }
 
-  Widget _buildSearchInstructions() {
+  Widget _buildInfoView({required IconData icon, required String message, String? details, Color? color}) {
     return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(Icons.search, size: 64, color: Colors.grey),
+          Icon(icon, size: 64, color: color ?? Colors.grey),
           SizedBox(height: 16),
           Text(
-            'Busca usuarios por nombre de usuario',
-            style: Theme.of(context).textTheme.bodyMedium,
+            message,
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: color),
             textAlign: TextAlign.center,
           ),
-          SizedBox(height: 8),
-          Text(
-            'Introduce al menos 3 caracteres',
-            style: TextStyle(fontSize: 14, color: Colors.grey),
-            textAlign: TextAlign.center,
-          ),
+          if (details != null) ...[
+            SizedBox(height: 8),
+            Text(
+              details,
+              style: TextStyle(fontSize: 14, color: Colors.grey),
+              textAlign: TextAlign.center,
+            ),
+          ]
         ],
       ),
+    );
+  }
+
+  Widget _buildSearchInstructions() {
+    return _buildInfoView(
+      icon: Icons.search,
+      message: 'Busca usuarios por nombre de usuario',
+      details: 'Introduce al menos 3 caracteres',
+    );
+  }
+
+  Widget _buildNoUsersFoundView() {
+    return _buildInfoView(
+      icon: Icons.person_off_outlined,
+      message: 'No se encontraron usuarios',
     );
   }
 
@@ -202,13 +287,13 @@ class SearchUsersScreenState extends State<SearchUsersScreen> {
 
   Widget _buildSearchResultTile(UserModel user) {
     final isRequesting = _requestInProgress[user.username] ?? false;
+    final alreadySent = _sentRequestsUsernames.contains(user.username);
 
     return ListTile(
       leading: UserAvatar(
         displayName: user.displayName,
-        avatarUrl: user.avatarUrl,
         size: 45,
-        backgroundColor: AppColors.primary.withOpacity(0.2),
+        backgroundColor: AppColors.primary.withAlpha((255 * 0.2).round()),
         textColor: AppColors.primary,
       ),
       title: Text(
@@ -225,33 +310,17 @@ class SearchUsersScreenState extends State<SearchUsersScreen> {
               height: 24,
               child: CircularProgressIndicator(strokeWidth: 2),
             )
-          : IconButton(
-              icon: Icon(Icons.person_add_alt_1_outlined, color: AppColors.primary),
-              tooltip: 'Añadir amigo',
-              onPressed: () => _sendFriendRequest(user),
-            ),
+          : alreadySent
+              ? Tooltip(
+                  message: 'Solicitud enviada',
+                  child: Icon(Icons.check_circle_outline, color: Colors.green),
+                ) 
+              : IconButton(
+                  icon: Icon(Icons.person_add_alt_1_outlined, color: AppColors.primary),
+                  tooltip: 'Añadir amigo',
+                  onPressed: alreadySent ? null : () => _sendFriendRequest(user),
+                ),
       contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-    );
-  }
-
-  Widget _buildNoUsersFoundView() {
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(Icons.person_search_outlined, size: 64, color: Colors.grey),
-          SizedBox(height: 16),
-          Text(
-            'No se encontraron usuarios',
-            style: Theme.of(context).textTheme.bodyMedium,
-          ),
-          SizedBox(height: 8),
-          Text(
-            'Intenta con otros términos de búsqueda',
-            style: TextStyle(fontSize: 14, color: Colors.grey),
-          ),
-        ],
-      ),
     );
   }
 }

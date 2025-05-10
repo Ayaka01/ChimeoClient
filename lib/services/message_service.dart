@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
-import 'package:http/http.dart' as http;
 import 'package:web_socket_channel/web_socket_channel.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:uuid/uuid.dart';
@@ -13,73 +12,55 @@ import 'auth_service.dart';
 import 'local_storage_service.dart';
 import '../utils/error_handler.dart';
 import '../utils/logger.dart';
+import '../repositories/message_repository.dart';
 
 class MessageService with ChangeNotifier {
   AuthService _authService;
   LocalStorageService _storageService;
+  MessageRepository _messageRepository;
+
   WebSocketChannel? _wsChannel;
+
   final StreamController<MessageModel> _messageController =
       StreamController<MessageModel>.broadcast();
   final StreamController<String> _deliveryController =
       StreamController<String>.broadcast();
-  // New controller for typing indicators
-  final StreamController<Map<String, dynamic>> _typingController =
-      StreamController<Map<String, dynamic>>.broadcast();
+
   Map<String, ConversationModel> _conversations = {};
   Timer? _reconnectTimer;
   Timer? _connectionMonitorTimer;
   bool _connected = false;
   bool _isOnline = true;
-  // Queue for storing messages when offline
+
   List<Map<String, dynamic>> _offlineQueue = [];
-  // Map to track typing indicator timers
-  final Map<String, Timer> _typingTimers = {};
-  // UUID generator for optimistic updates
+
   final _uuid = Uuid();
+
   final ErrorHandler _errorHandler = ErrorHandler();
   final Logger _logger = Logger();
 
   // Getters
   Stream<MessageModel> get messagesStream => _messageController.stream;
   Stream<String> get deliveryStream => _deliveryController.stream;
-  Stream<Map<String, dynamic>> get typingStream => _typingController.stream;
   Map<String, ConversationModel> get conversations => _conversations;
   bool get isConnected => _connected;
   bool get isOnline => _isOnline;
 
   // Constructor
-  MessageService(this._authService, this._storageService) {
-    // Initialize by loading saved conversations
+  MessageService(
+    this._authService,
+    this._storageService,
+    this._messageRepository,
+  ) {
     _loadSavedConversations();
-    
-    // Load offline queue
+
     _loadOfflineQueue();
 
-    // Setup connectivity monitoring
     _setupConnectivityMonitoring();
 
-    // Connect to WebSocket if authenticated
     if (_authService.isAuthenticated) {
       connectToWebSocket();
     }
-    
-    // Listen to typing indicators
-    _typingController.stream.listen((data) {
-      final username = data['username'] as String;
-      final isTyping = data['isTyping'] as bool;
-      
-      if (_conversations.containsKey(username)) {
-        final conversation = _conversations[username]!;
-        _conversations[username] = conversation.copyWith(
-          isTyping: isTyping,
-          typingTimestamp: isTyping ? DateTime.now() : null,
-        );
-        
-        // Save to storage
-        _saveConversations();
-        notifyListeners();
-      }
-    });
   }
 
   // Monitor connectivity changes
@@ -87,19 +68,25 @@ class MessageService with ChangeNotifier {
     // Listen for connectivity changes
     Connectivity().onConnectivityChanged.listen((ConnectivityResult result) {
       _isOnline = result != ConnectivityResult.none;
-      
+
       if (_isOnline) {
-        _logger.i('Device is online, reconnecting and sending queued messages...', tag: 'MessageService');
+        _logger.i(
+          'Device is online, reconnecting and sending queued messages...',
+          tag: 'MessageService',
+        );
         connectToWebSocket();
         _processOfflineQueue();
       } else {
-        _logger.i('Device is offline, will queue messages', tag: 'MessageService');
+        _logger.i(
+          'Device is offline, will queue messages',
+          tag: 'MessageService',
+        );
         _wsChannel?.sink.close();
         _connected = false;
         notifyListeners();
       }
     });
-    
+
     // Check initial connectivity
     final connectivityResult = await Connectivity().checkConnectivity();
     _isOnline = connectivityResult != ConnectivityResult.none;
@@ -109,9 +96,11 @@ class MessageService with ChangeNotifier {
   void updateServices(
     AuthService authService,
     LocalStorageService storageService,
+    MessageRepository messageRepository,
   ) {
     _authService = authService;
     _storageService = storageService;
+    _messageRepository = messageRepository;
   }
 
   // Load saved conversations from local storage
@@ -120,22 +109,18 @@ class MessageService with ChangeNotifier {
       final savedConversations = await _storageService.getConversations();
       if (savedConversations != null) {
         _conversations = savedConversations;
-        
-        // Reset typing indicators on app start
-        _conversations.forEach((key, conversation) {
-          if (conversation.isTyping) {
-            _conversations[key] = conversation.copyWith(isTyping: false);
-          }
-        });
-        
+
         notifyListeners();
       }
     } catch (e) {
-      _logger.e('Error loading saved conversations', error: e, tag: 'MessageService');
+      _logger.e(
+        'Error loading saved conversations',
+        error: e,
+        tag: 'MessageService',
+      );
     }
   }
-  
-  // Load offline message queue
+
   Future<void> _loadOfflineQueue() async {
     try {
       final queue = await _storageService.getOfflineQueue();
@@ -146,7 +131,7 @@ class MessageService with ChangeNotifier {
       _logger.e('Error loading offline queue', error: e, tag: 'MessageService');
     }
   }
-  
+
   // Save offline queue
   Future<void> _saveOfflineQueue() async {
     try {
@@ -156,35 +141,34 @@ class MessageService with ChangeNotifier {
     }
   }
 
-  // Process offline queue when online
   Future<void> _processOfflineQueue() async {
     if (_offlineQueue.isEmpty) return;
-    
-    _logger.i('Processing ${_offlineQueue.length} queued messages', tag: 'MessageService');
-    
+
+    _logger.i(
+      'Processing ${_offlineQueue.length} queued messages',
+      tag: 'MessageService',
+    );
+
     // Make a copy to avoid modification during iteration
     final queueCopy = List<Map<String, dynamic>>.from(_offlineQueue);
-    
+
     for (final item in queueCopy) {
       if (item['type'] == 'message') {
         final recipientId = item['recipient'];
         final text = item['text'];
         final tempId = item['temp_id'];
-        
-        // Try to send the message
+
         final message = await _sendMessageToServer(recipientId, text, tempId);
-        
+
         if (message != null) {
           _offlineQueue.remove(item);
         }
       }
     }
-    
-    // Save the updated queue
+
     await _saveOfflineQueue();
   }
 
-  // Save conversations to local storage
   Future<void> _saveConversations() async {
     try {
       await _storageService.saveConversations(_conversations);
@@ -193,15 +177,16 @@ class MessageService with ChangeNotifier {
     }
   }
 
-  // Connect to WebSocket
   void connectToWebSocket() {
-    if (_authService.user == null || _authService.token == null || !_isOnline) return;
-    if (_connected || _reconnectTimer != null) return; 
+    if (_authService.user == null || _authService.token == null || !_isOnline)
+      return;
+    if (_connected || _reconnectTimer != null) return;
 
     _logger.i('Attempting to connect to WebSocket...', tag: 'MessageService');
 
     try {
-      final wsUrl = '${ApiConfig.wsUrl}${ApiConfig.messagesPath}/ws/${_authService.user!.username}';
+      final wsUrl =
+          '${ApiConfig.wsUrl}${ApiConfig.messagesPath}/ws/${_authService.user!.username}';
       final uri = Uri.parse(wsUrl);
       final uriWithAuth = uri.replace(
         queryParameters: {'token': _authService.token},
@@ -210,32 +195,7 @@ class MessageService with ChangeNotifier {
       _wsChannel = WebSocketChannel.connect(uriWithAuth);
 
       _wsChannel!.stream.listen(
-        (dynamic data) {
-          _logger.i('Received WebSocket message: $data', tag: 'MessageService');
-          final jsonData = json.decode(data);
-
-          if (jsonData['type'] == 'new_message') {
-            // Handle new message
-            final message = MessageModel.fromJson(jsonData['data']);
-            _handleNewMessage(message);
-          } else if (jsonData['type'] == 'message_delivered') {
-            // Handle message delivery confirmation
-            final messageId = jsonData['data']['message_id'];
-            _handleMessageDelivered(messageId);
-          } else if (jsonData['type'] == 'typing_indicator') {
-            // Handle typing indicator
-            final username = jsonData['data']['username'];
-            final isTyping = jsonData['data']['is_typing'];
-            
-            _typingController.add({
-              'username': username,
-              'isTyping': isTyping,
-            });
-          } else if (jsonData['type'] == 'pong') {
-            // Heartbeat response, connection is alive
-            _logger.d('Heartbeat response received', tag: 'MessageService');
-          }
-        },
+        _onWebSocketData,
         onDone: _handleDisconnect,
         onError: (error) {
           _logger.e('WebSocket error', error: error, tag: 'MessageService');
@@ -243,10 +203,7 @@ class MessageService with ChangeNotifier {
         },
       );
 
-      // Send authentication message
-      _wsChannel?.sink.add(json.encode({'type': 'authenticate', 'token': _authService.token}));
-
-      // Setup heartbeat to detect connection issues early
+      // Setup heartbeat
       _connectionMonitorTimer?.cancel();
       _connectionMonitorTimer = Timer.periodic(Duration(seconds: 30), (timer) {
         if (_connected) {
@@ -258,471 +215,395 @@ class MessageService with ChangeNotifier {
 
       _connected = true;
       notifyListeners();
-      _reconnectTimer?.cancel(); 
+      _reconnectTimer?.cancel();
       _reconnectTimer = null;
 
       _logger.i('Connected to WebSocket server', tag: 'MessageService');
-      
-      // Process offline queue and fetch pending messages without awaiting
-      _logger.i('Processing offline queue & fetching pending messages concurrently...', tag: 'MessageService');
+
       _processOfflineQueue();
       getPendingMessages();
-      
     } catch (e) {
       _logger.e('WebSocket connection error', error: e, tag: 'MessageService');
       _handleDisconnect();
     }
   }
 
-  // Handle WebSocket disconnection
+  void _onWebSocketData(dynamic data) {
+    _logger.i('Received WebSocket message: $data', tag: 'MessageService');
+    try {
+      final jsonData = json.decode(data);
+      final messageType = jsonData['type'];
+
+      if (messageType == 'new_message') {
+        final message = MessageModel.fromJson(jsonData['data']);
+        _handleNewMessage(message);
+      } else if (messageType == 'message_delivered') {
+        final messageId = jsonData['data']['message_id'];
+        _handleMessageDelivered(messageId);
+      } else if (messageType == 'pong') {
+        _logger.d('Heartbeat response received', tag: 'MessageService');
+      } else {
+        _logger.w('Received unknown WebSocket message type: $messageType', tag: 'MessageService');
+      }
+    } catch (e) {
+      _logger.e('Error processing WebSocket message', error: e, tag: 'MessageService', stackTrace: StackTrace.current);
+    }
+  }
+
   void _handleDisconnect() {
-    _logger.w('WebSocket disconnected.', tag: 'MessageService');
+    if (!_connected) return;
+
+    _logger.i('Disconnected from WebSocket server', tag: 'MessageService');
     _connected = false;
-    _wsChannel = null; // Clear the channel
-    _connectionMonitorTimer?.cancel(); // Stop heartbeat
+    _wsChannel = null;
+    _connectionMonitorTimer?.cancel();
     notifyListeners();
 
-    // Only try to reconnect if online and not already trying
-    if (_isOnline && _reconnectTimer == null) { 
-      _logger.i('Scheduling WebSocket reconnection in 5 seconds...', tag: 'MessageService');
+    if (_isOnline && _reconnectTimer == null) {
+      _logger.i('Scheduling WebSocket reconnection...', tag: 'MessageService');
       _reconnectTimer = Timer(Duration(seconds: 5), () {
-         _reconnectTimer = null; // Clear timer before attempting connect
-         connectToWebSocket();
+        _reconnectTimer = null;
+        connectToWebSocket();
       });
     }
   }
 
-  // Handle incoming message
   void _handleNewMessage(MessageModel message) {
-    // Check if we already have this message (for optimistic updates)
-    bool messageExists = false;
-    String conversationId = message.senderId;
+    final currentUserId = _authService.user?.username;
+    final bool isIncoming = message.recipientId == currentUserId;
     
-    if (message.senderId == _authService.user!.username) {
-      conversationId = message.recipientId;
-    }
-    
-    if (_conversations.containsKey(conversationId)) {
-      messageExists = _conversations[conversationId]!.messages.any((m) => 
-        m.id == message.id || (m.isOffline && m.text == message.text));
-      
-      // If it was an optimistic update, remove the temporary message
-      if (messageExists) {
-        _conversations[conversationId]!.messages.removeWhere((m) => 
-          m.isOffline && m.text == message.text);
-      }
-    }
-    
-    // Add message to stream if it's new
-    if (!messageExists) {
-      _messageController.add(message);
+    final friendId = isIncoming ? message.senderId : message.recipientId;
+
+    _conversations.putIfAbsent(
+      friendId,
+      () => ConversationModel(
+        friendUsername: friendId,
+        friendName: friendId,
+        messages: [],
+      ),
+    );
+
+    final conversation = _conversations[friendId]!;
+
+    final existingIndex = conversation.messages.indexWhere((m) => m.id == message.id);
+    if (existingIndex == -1) {
+      conversation.messages.add(message);
+      _logger.i('Handled new message ${message.id}, added to end.', tag:'MessageService');
+    } else {
+      conversation.messages[existingIndex] = message;
+      _logger.i('Handled new message ${message.id}, updated existing entry.', tag:'MessageService');
     }
 
-    // Find the conversation or create a new one
-    if (!_conversations.containsKey(conversationId)) {
-      // No existing conversation, create a new one
-      _conversations[conversationId] = ConversationModel(
-        friendUsername: conversationId,
-        friendName: 'User', // Placeholder, should be updated later
-        messages: [],
+    // Sort messages: oldest first, handle null timestamps (treat as oldest)
+    conversation.messages.sort((a, b) {
+      final aTime = a.timestamp ?? DateTime.fromMillisecondsSinceEpoch(0);
+      final bTime = b.timestamp ?? DateTime.fromMillisecondsSinceEpoch(0);
+      return aTime.compareTo(bTime);
+    });
+
+    _messageController.add(message);
+    _saveConversations();
+    notifyListeners();
+
+    if (isIncoming) {
+      _acknowledgeMessageDelivery(message.id);
+    }
+  }
+
+  Future<void> _acknowledgeMessageDelivery(String messageId) async {
+    if (messageId.length < 36) {
+        _logger.w('Skipping acknowledgment for potentially temporary ID: $messageId', tag: 'MessageService');
+        return;
+    }
+    _logger.i('Acknowledging delivery for message $messageId', tag: 'MessageService');
+    try {
+      final result = await _messageRepository.markMessageAsDelivered(messageId);
+      if (result.isSuccess) {
+        _logger.i('Successfully acknowledged delivery for $messageId to server.', tag: 'MessageService');
+      } else {
+        _logger.e(
+          'Failed to acknowledge delivery for $messageId: ${result.error?.toString()}',
+          error: result.error,
+          tag: 'MessageService',
+        );
+      }
+    } catch (e, s) {
+      _logger.e(
+        'Exception acknowledging delivery for $messageId: $e',
+        error: e,
+        stackTrace: s,
+        tag: 'MessageService',
       );
     }
-
-    // Add message to conversation
-    _conversations[conversationId]!.addMessage(message);
-
-    // Mark as delivered if we received it
-    if (message.senderId != _authService.user!.username) {
-      markMessageAsDelivered(message.id);
-      
-      // Reset typing indicator when a message is received
-      _typingController.add({
-        'username': message.senderId,
-        'isTyping': false,
-      });
-    }
-
-    // Save to local storage
-    _saveConversations();
-
-    // Notify listeners
-    notifyListeners();
   }
 
-  // Handle message delivery confirmation
   void _handleMessageDelivered(String messageId) {
-    // Notify through delivery stream
-    _deliveryController.add(messageId);
-
-    // Update message status in all conversations
-    _conversations.forEach((friendId, conversation) {
-      for (var message in conversation.messages) {
-        if (message.id == messageId) {
-          message.delivered = true;
+    bool updated = false;
+    _logger.i('Received delivery confirmation trigger for messageId: $messageId', tag:'MessageService:HandleDelivery');
+    
+    for (var conversation in _conversations.values) {
+      final messageIndex = conversation.messages.indexWhere((m) => m.id == messageId);
+      if (messageIndex != -1) {
+        final message = conversation.messages[messageIndex];
+        _logger.d('Found message ${message.id} in conversation ${conversation.friendUsername}. Current delivered status: ${message.delivered}', tag:'MessageService:HandleDelivery');
+        
+        if (!message.delivered) {
+          conversation.messages[messageIndex].delivered = true;
+          _logger.i('Updated message ${message.id} delivered status to: ${conversation.messages[messageIndex].delivered}', tag:'MessageService:HandleDelivery');
+          
+          _messageController.add(conversation.messages[messageIndex]);
+          updated = true;
           break;
         }
       }
-    });
-
-    // Save to local storage
-    _saveConversations();
-
-    // Notify listeners
-    notifyListeners();
-  }
-  
-  // Send typing indicator
-  void sendTypingIndicator(String recipientId, bool isTyping) {
-    if (!_isOnline || !_connected) return;
-    
-    try {
-      // Cancel existing timer if any
-      _typingTimers[recipientId]?.cancel();
-      
-      // Send typing indicator via WebSocket
-      _wsChannel?.sink.add(json.encode({
-        'type': 'typing_indicator', 
-        'data': {
-          'recipient': recipientId,
-          'is_typing': isTyping
-        }
-      }));
-      
-      // If typing, set a timer to automatically turn it off after 3 seconds
-      if (isTyping) {
-        _typingTimers[recipientId] = Timer(Duration(seconds: 3), () {
-          sendTypingIndicator(recipientId, false);
-        });
-      }
-    } catch (e) {
-      _logger.e('Error sending typing indicator', error: e, tag: 'MessageService');
+    }
+    if (updated) {
+      _logger.i('Marked message $messageId as delivered, saving and notifying listeners.', tag: 'MessageService');
+      _saveConversations();
+      _deliveryController.add(messageId);
+      notifyListeners();
+    } else {
+      _logger.w('Received delivery confirmation for unknown or already delivered message $messageId', tag: 'MessageService');
     }
   }
 
-  // Send a message with optimistic updates
+  Future<void> getPendingMessages() async {
+    if (!_authService.isAuthenticated) {
+       _logger.w('User not authenticated, skipping getPendingMessages', tag: 'MessageService');
+       return;
+    }
+
+    try {
+      final result = await _messageRepository.getPendingMessages();
+      if (result.isSuccess) {
+        final messages = result.value;
+        if (messages.isNotEmpty) {
+          _logger.i('Fetched ${messages.length} pending messages', tag: 'MessageService');
+          for (final message in messages) {
+            _handleNewMessage(message);
+          }
+        }
+      } else {
+        final errorMessage = _errorHandler.handleError(result.error);
+        _logger.e(
+          'Error fetching pending messages: $errorMessage',
+          error: result.error,
+          tag: 'MessageService',
+        );
+      }
+    } catch (e) {
+      final errorMessage = _errorHandler.handleError(e);
+      _logger.e(
+        'Exception fetching pending messages: $errorMessage',
+        error: e,
+        tag: 'MessageService',
+      );
+    }
+  }
+
   Future<MessageModel?> sendMessage(String recipientId, String text) async {
-    // Generate a temporary ID for optimistic update
-    final tempId = 'temp_${_uuid.v4()}';
-    
-    // Create temporary message for optimistic UI
-    final tempMessage = MessageModel(
+    if (!_authService.isAuthenticated || _authService.user == null) {
+      throw Exception('User not authenticated');
+    }
+
+    final tempId = _uuid.v4();
+    final optimisticMessage = MessageModel(
       id: tempId,
       senderId: _authService.user!.username,
       recipientId: recipientId,
       text: text,
-      timestamp: DateTime.now(),
       delivered: false,
-      read: false,
-      isOffline: !_isOnline,
+      isOffline: true,
+      timestamp: DateTime.now(),
     );
-    
-    // Add to local conversation immediately (optimistic)
-    if (!_conversations.containsKey(recipientId)) {
-      _conversations[recipientId] = ConversationModel(
-        friendUsername: recipientId,
-        friendName: 'User', // Placeholder
-        messages: [],
-      );
-    }
-    
-    _conversations[recipientId]!.addMessage(tempMessage);
-    notifyListeners();
-    await _saveConversations();
-    
-    // Clear any typing indicator
-    sendTypingIndicator(recipientId, false);
-    
-    // If offline, queue the message and return the temp message
+
+    _handleNewMessage(optimisticMessage);
+
     if (!_isOnline) {
-      _logger.i('Device offline, queueing message to $recipientId', tag: 'MessageService');
-      
-      // Add to the offline queue
+      _logger.i('Offline: Queuing message to $recipientId', tag: 'MessageService');
       _offlineQueue.add({
         'type': 'message',
-        'recipient': recipientId, 
+        'recipient': recipientId,
         'text': text,
-        'timestamp': DateTime.now().toIso8601String(),
         'temp_id': tempId,
       });
-      
-      // Save the queue
       await _saveOfflineQueue();
-      
-      return tempMessage;
+      return optimisticMessage;
     }
 
-    // Try to send to server
     return await _sendMessageToServer(recipientId, text, tempId);
   }
-  
-  // Send message to server
+
   Future<MessageModel?> _sendMessageToServer(String recipientId, String text, String tempId) async {
     try {
-      final response = await http.post(
-        Uri.parse('${ApiConfig.baseUrl}${ApiConfig.messagesPath}/'),
-        headers: {
-          'Authorization': 'Bearer ${_authService.token}',
-          'Content-Type': 'application/json',
-        },
-        body: json.encode({
-          'recipient_username': recipientId,
-          'text': text
-        }),
-      );
+      final result = await _messageRepository.sendMessageViaHttp(recipientId, text);
 
-      if (response.statusCode == 200) {
-        // Get the real message back from the server
-        final MessageModel serverMessage = MessageModel.fromJson(json.decode(response.body));
-        
-        // Replace the temporary message with the server one
-        if (_conversations.containsKey(recipientId)) {
-          _conversations[recipientId]!.replaceMessage(tempId, serverMessage);
-          notifyListeners();
-          await _saveConversations();
-        }
-        
-        return serverMessage;
+      if (result.isSuccess) {
+        final sentMessage = result.value;
+        _updateOptimisticMessage(tempId, sentMessage);
+        return sentMessage;
       } else {
-        // Mark the message as failed
-        if (_conversations.containsKey(recipientId)) {
-          final messageIndex = _conversations[recipientId]!.messages.indexWhere((m) => m.id == tempId);
-          if (messageIndex >= 0) {
-            final updatedMessage = _conversations[recipientId]!.messages[messageIndex].copyWith(error: true);
-            _conversations[recipientId]!.messages[messageIndex] = updatedMessage;
-            notifyListeners();
-            await _saveConversations();
-          }
-        }
-        
-        _logger.e('HTTP Error sending message: ${response.statusCode}', tag: 'MessageService');
+        final errorMessage = _errorHandler.handleError(result.error);
+        _logger.e(
+          'Failed to send message via HTTP: $errorMessage',
+          error: result.error,
+          tag: 'MessageService',
+        );
+        _markMessageAsFailed(tempId, errorMessage);
         return null;
       }
     } catch (e) {
-      // Mark the message as failed
-      if (_conversations.containsKey(recipientId)) {
-        final messageIndex = _conversations[recipientId]!.messages.indexWhere((m) => m.id == tempId);
-        if (messageIndex >= 0) {
-          final updatedMessage = _conversations[recipientId]!.messages[messageIndex].copyWith(error: true);
-          _conversations[recipientId]!.messages[messageIndex] = updatedMessage;
-          notifyListeners();
-          await _saveConversations();
-        }
-      }
-      
-      _logger.e('Error sending message to server', error: e, tag: 'MessageService');
+      final errorMessage = _errorHandler.handleError(e);
+      _logger.e(
+        'Exception sending message to $recipientId: $errorMessage',
+        error: e,
+        tag: 'MessageService',
+      );
+      _markMessageAsFailed(tempId, errorMessage);
       return null;
     }
   }
 
-  // Search across all conversations
-  Map<String, List<MessageModel>> searchMessages(String query) {
-    if (query.isEmpty) return {};
-    
-    final result = <String, List<MessageModel>>{};
-    final queryLower = query.toLowerCase();
-    
-    try {
-      // Search through in-memory conversations instead of loading from storage
-      _conversations.forEach((conversationId, conversation) {
-        final matchingMessages = conversation.messages
-            .where((msg) => msg.text.toLowerCase().contains(queryLower))
-            .toList();
-        
-        if (matchingMessages.isNotEmpty) {
-          result[conversationId] = matchingMessages;
-        }
+  void _updateOptimisticMessage(String tempId, MessageModel serverMessage) {
+    bool updated = false;
+    ConversationModel? targetConversation;
+
+    _logger.i('Attempting to update optimistic message $tempId. Server data: ${jsonEncode(serverMessage.toJson())}', tag: 'MessageService');
+
+    final confirmedMessage = serverMessage.copyWith(
+      isOffline: false,
+      delivered: false,
+    );
+
+    for (var conversation in _conversations.values) {
+      final index = conversation.messages.indexWhere((m) => m.id == tempId && m.isOffline);
+      if (index != -1) {
+        conversation.messages.removeAt(index);
+        conversation.messages.add(confirmedMessage);
+        targetConversation = conversation;
+        updated = true;
+        break;
+      }
+    }
+
+    if (updated && targetConversation != null) {
+      targetConversation.messages.sort((a, b) {
+         final aTime = a.timestamp ?? DateTime.fromMillisecondsSinceEpoch(0);
+         final bTime = b.timestamp ?? DateTime.fromMillisecondsSinceEpoch(0);
+         return aTime.compareTo(bTime);
       });
-      
-      return result;
-    } catch (e, stackTrace) {
-      _errorHandler.logError(e, stackTrace: stackTrace);
-      return {};
+      _saveConversations(); 
+      _logger.i('Pushing confirmed message ${confirmedMessage.id} (was $tempId) to stream.', tag: 'MessageService');
+      _messageController.add(confirmedMessage); 
+      notifyListeners(); 
+      _logger.i('Updated optimistic message $tempId with server ID ${confirmedMessage.id}, marked as online.', tag: 'MessageService');
+    } else {
+      _logger.w('Could not find optimistic message with temp ID $tempId to update.', tag: 'MessageService');
     }
   }
 
-  // Mark a message as delivered
-  Future<bool> markMessageAsDelivered(String messageId) async {
-    try {
-      // Mark on server
-      final response = await http.post(
-        Uri.parse('$ApiConfig.baseUrl${ApiConfig.messagesPath}/delivered/$messageId'),
-        headers: {'Authorization': 'Bearer ${_authService.token}'},
-      );
+  void _markMessageAsFailed(String tempId, String errorMessage) {
+    bool updated = false;
+    ConversationModel? targetConversation;
+    MessageModel? targetMessage;
 
-      if (response.statusCode == 200) {
-        // Also notify through WebSocket for real-time updates
-        _wsChannel?.sink.add(
-          json.encode({'type': 'message_delivered', 'message_id': messageId}),
-        );
+    for (var conversation in _conversations.values) {
+      final index = conversation.messages.indexWhere((m) => m.id == tempId);
+      if (index != -1) {
+        if (!conversation.messages[index].error) {
+          final failedMessage = conversation.messages[index].copyWith(
+            error: true,
+            errorMessage: errorMessage,
+            isOffline: true,
+          );
+          conversation.messages[index] = failedMessage;
 
-        return true;
-      }
-
-      return false;
-    } catch (e) {
-      _logger.e('Error marking message as delivered', error: e, tag: 'MessageService');
-      return false;
-    }
-  }
-
-  // Get all pending messages from server
-  Future<List<MessageModel>> getPendingMessages() async {
-    try {
-      final response = await http.get(
-        Uri.parse('${ApiConfig.baseUrl}${ApiConfig.messagesPath}/pending'),
-        headers: {'Authorization': 'Bearer ${_authService.token}'},
-      );
-
-      if (response.statusCode == 200) {
-        final List<dynamic> data = json.decode(response.body);
-        final messages =
-            data.map((json) => MessageModel.fromJson(json)).toList();
-
-        // Process each message
-        for (var message in messages) {
-          _handleNewMessage(message);
-
-          // Mark as delivered
-          markMessageAsDelivered(message.id);
+          targetConversation = conversation;
+          targetMessage = failedMessage;
+          updated = true;
+          break;
         }
-
-        return messages;
       }
-
-      return [];
-    } catch (e) {
-      _logger.e('Error getting pending messages', error: e, tag: 'MessageService');
-      return [];
     }
-  }
 
-  // Fetch or create a conversation with a friend
-  ConversationModel getOrCreateConversation(UserModel friend) {
-    if (!_conversations.containsKey(friend.username)) {
-      _conversations[friend.username] = ConversationModel(
-        friendUsername: friend.username,
-        friendName: friend.displayName,
-        messages: [],
-        friendAvatarUrl: friend.avatarUrl,
-      );
-
-      // Save to local storage
+    if (updated && targetConversation != null && targetMessage != null) {
+      _messageController.add(targetMessage);
       _saveConversations();
       notifyListeners();
+      _logger.i('Marked optimistic message $tempId as failed.', tag: 'MessageService');
     } else {
-      // Update friend info if it has changed
-      final currentConversation = _conversations[friend.username]!;
-      
-      if (currentConversation.friendName != friend.displayName || 
-          currentConversation.friendAvatarUrl != friend.avatarUrl) {
-        
-        _conversations[friend.username] = currentConversation.copyWith(
-          friendName: friend.displayName,
-          friendAvatarUrl: friend.avatarUrl,
-        );
-
-        // Save to local storage
-        _saveConversations();
-        notifyListeners();
-      }
+      _logger.w('Could not find optimistic message with temp ID $tempId to mark as failed, or it was already marked.', tag: 'MessageService');
     }
-
-    return _conversations[friend.username]!;
   }
 
-  // Delete a conversation
-  Future<bool> deleteConversation(String friendId) async {
-    if (_conversations.containsKey(friendId)) {
-      _conversations.remove(friendId);
+  ConversationModel getOrCreateConversation(UserModel friend) {
+    final existingConversation = _conversations[friend.username];
 
-      // Save to local storage
-      await _saveConversations();
-      notifyListeners();
-      return true;
+    if (existingConversation != null &&
+        existingConversation.friendName == (friend.displayName ?? friend.username) &&
+        existingConversation.friendAvatarUrl == null) {
+      return existingConversation;
     }
-    return false;
+
+    final newConversation = ConversationModel(
+      friendUsername: friend.username,
+      friendName: friend.displayName ?? friend.username,
+      messages: existingConversation?.messages ?? [],
+    );
+
+    _conversations[friend.username] = newConversation;
+    _saveConversations();
+    return newConversation;
   }
 
-  // Delete a specific message
-  Future<bool> deleteMessage(String friendId, String messageId) async {
+  Future<void> deleteMessage(String friendId, String messageId) async {
     if (_conversations.containsKey(friendId)) {
       _conversations[friendId]!.messages.removeWhere((m) => m.id == messageId);
-
-      // Save to local storage
       await _saveConversations();
       notifyListeners();
-      return true;
+      _logger.i('Deleted message $messageId locally from conversation $friendId', tag: 'MessageService');
+    } else {
+      _logger.w('Cannot delete message $messageId: Conversation $friendId not found', tag: 'MessageService');
     }
-    return false;
   }
 
-  // Clear all conversations from local storage
+  Future<void> clearLocalMessagesForConversation(String friendId) async {
+    if (_conversations.containsKey(friendId)) {
+      _conversations[friendId]!.messages.clear();
+      await _saveConversations();
+      notifyListeners();
+      _logger.i('Cleared all local messages for conversation $friendId', tag: 'MessageService');
+    } else {
+      _logger.w('Cannot clear messages: Conversation $friendId not found', tag: 'MessageService');
+    }
+  }
+
   Future<bool> clearAllLocalConversations() async {
     try {
-      _conversations = {};
+      _conversations.clear();
       await _storageService.clearAllConversations();
       notifyListeners();
+      _logger.i('Cleared all local conversations', tag: 'MessageService');
       return true;
-    } catch (e, stackTrace) {
-      _errorHandler.logError(e, stackTrace: stackTrace);
+    } catch (e) {
+      _logger.e('Error clearing all local conversations', error: e, tag: 'MessageService');
       return false;
     }
   }
 
-  // Disconnect WebSocket and clear timers
-  void disconnectWebSocket() {
-    _wsChannel?.sink.close();
-    _wsChannel = null;
-    _connected = false;
-    _reconnectTimer?.cancel();
-    _connectionMonitorTimer?.cancel();
-    notifyListeners();
+  // Add a public method to disconnect the WebSocket
+  void disconnect() {
+    _logger.i('Explicitly disconnecting WebSocket...', tag: 'MessageService');
+    _handleDisconnect();
   }
 
-  // Clear in-memory data
-  void clearData() {
-    _conversations.clear();
-    _offlineQueue.clear();
-    _typingTimers.forEach((key, timer) => timer.cancel());
-    _typingTimers.clear();
-    notifyListeners();
-  }
-
-  // Clean up
   @override
   void dispose() {
-    _wsChannel?.sink.close();
     _messageController.close();
     _deliveryController.close();
-    _typingController.close();
     _reconnectTimer?.cancel();
     _connectionMonitorTimer?.cancel();
-    
-    // Cancel all typing timers
-    for (final timer in _typingTimers.values) {
-      timer.cancel();
-    }
-    _typingTimers.clear();
-    
+    _wsChannel?.sink.close();
     super.dispose();
-  }
-
-  // Clear all locally stored messages for a specific conversation
-  Future<void> clearLocalMessagesForConversation(String friendUsername) async {
-    if (_conversations.containsKey(friendUsername)) {
-      final currentConversation = _conversations[friendUsername]!;
-      // Create a new conversation instance with messages cleared
-      // Assuming ConversationModel has a copyWith method
-      _conversations[friendUsername] = currentConversation.copyWith(messages: []); 
-      
-      // Persist the change
-      await _saveConversations();
-      
-      // Notify listeners (like ChatScreen) to rebuild
-      notifyListeners();
-      _logger.i('Cleared local messages for conversation with $friendUsername', tag: 'MessageService');
-    } else {
-       _logger.w('Attempted to clear messages for non-existent conversation: $friendUsername', tag: 'MessageService');
-    }
   }
 }

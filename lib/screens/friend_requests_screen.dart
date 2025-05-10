@@ -5,6 +5,9 @@ import '../services/user_service.dart';
 import '../models/friend_request_model.dart';
 import '../components/user_avatar.dart';
 import '../constants/colors.dart';
+import '../components/error_display.dart';
+import '../utils/logger.dart'; // Import Logger
+import 'package:simple_messenger/utils/exceptions.dart'; // Ensure imported
 
 class FriendRequestsScreen extends StatefulWidget {
   const FriendRequestsScreen({super.key});
@@ -21,12 +24,15 @@ class FriendRequestsScreenState extends State<FriendRequestsScreen>
   List<FriendRequestModel> _sentRequests = [];
   bool _isLoadingReceived = true;
   bool _isLoadingSent = true;
+  String? _receivedError;
+  String? _sentError;
+  final Logger _logger = Logger(); // Instantiate Logger
 
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
-    _userService = Provider.of<UserService>(context, listen: false);
+    _userService = context.read<UserService>();
 
     _loadReceivedRequests();
     _loadSentRequests();
@@ -41,6 +47,7 @@ class FriendRequestsScreenState extends State<FriendRequestsScreen>
   Future<void> _loadReceivedRequests() async {
     setState(() {
       _isLoadingReceived = true;
+      _receivedError = null; // Clear previous error
     });
 
     try {
@@ -54,23 +61,18 @@ class FriendRequestsScreenState extends State<FriendRequestsScreen>
       });
     } catch (e) {
       if (!mounted) return;
-      
+      _logger.e('Error loading received requests', error: e, tag: 'FriendRequestsScreen');
       setState(() {
         _isLoadingReceived = false;
+        _receivedError = e is Exception ? e.toString() : 'Error al cargar solicitudes recibidas.';
       });
-      
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Error al cargar solicitudes: $e'),
-          backgroundColor: Colors.red,
-        ),
-      );
     }
   }
 
   Future<void> _loadSentRequests() async {
     setState(() {
       _isLoadingSent = true;
+      _sentError = null; // Clear previous error
     });
 
     try {
@@ -84,98 +86,65 @@ class FriendRequestsScreenState extends State<FriendRequestsScreen>
       });
     } catch (e) {
       if (!mounted) return;
-      
+      _logger.e('Error loading sent requests', error: e, tag: 'FriendRequestsScreen');
       setState(() {
         _isLoadingSent = false;
+        _sentError = e is Exception ? e.toString() : 'Error al cargar solicitudes enviadas.';
       });
-      
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Error al cargar solicitudes enviadas: $e'),
-          backgroundColor: Colors.red,
-        ),
-      );
     }
   }
 
   Future<void> _respondToRequest(String requestId, String action) async {
+    _logger.d('Attempting to respond ($action) to request $requestId', tag: 'FriendRequestsScreen');
+    
+    String errorTitle = 'Error al responder';
+    String errorMessage = 'Ocurrió un error inesperado.'; // Default message
+
     try {
-      // Now expects a boolean indicating success
-      final bool success = await _userService.respondToFriendRequest(
-        requestId,
-        action,
-      );
-
-      // Check if widget is still mounted after async operation
+      await _userService.respondToFriendRequest(requestId, action);
+      _logger.i('Response ($action) to request $requestId successful', tag: 'FriendRequestsScreen');
       if (!mounted) return;
+      // Reload the lists on success
+      _loadReceivedRequests();
+      _loadSentRequests();
+      return; // Exit on success
 
-      // Check the boolean result
-      if (success) { 
-        // Reload the lists
-        _loadReceivedRequests();
-        _loadSentRequests();
-
-        // Show success message
-        final message =
-            action == 'accept'
-                ? 'Solicitud aceptada. ¡Ahora son amigos!'
-                : 'Solicitud rechazada.';
-
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(message),
-            backgroundColor: action == 'accept' ? Colors.green : null,
-          ),
-        );
-      } else {
-         // Show generic failure message if service returned false
-         ScaffoldMessenger.of(context).showSnackBar(
-           SnackBar(
-             content: Text('No se pudo ${action == 'accept' ? 'aceptar' : 'rechazar'} la solicitud.'),
-             backgroundColor: Colors.red,
-           )
-         );
-      }
-    } catch (e) { // Catch any unexpected exceptions from the service call itself
-      if (!mounted) return;
+    // Catch specific known errors
+    } on FriendRequestNotFoundException catch (e) {
+        errorMessage = e.message;
+    } on NotAuthorizedException catch (e) {
+        errorMessage = e.message;
+        errorTitle = 'No autorizado';
+    } on InvalidFriendRequestStateException catch (e) {
+        errorMessage = e.message;
+        errorTitle = 'Acción inválida';
+    } on Exception catch (e) { // Catch other general exceptions
+      _logger.e('Error responding to request $requestId ($action)', error: e, tag: 'FriendRequestsScreen');
+      errorMessage = e.toString(); // Use the exception's message
+    }
       
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Error: ${e.toString()}'),
-          backgroundColor: Colors.red,
-        )
+    // Show dialog only if an error occurred
+    if (mounted) { 
+      showDialog(
+        context: context,
+        builder: (BuildContext dialogContext) {
+          return AlertDialog(
+            title: Text(errorTitle),
+            content: Text(errorMessage), // Show specific or generic error message
+            actions: <Widget>[
+              TextButton(
+                child: Text('OK'),
+                onPressed: () {
+                  Navigator.of(dialogContext).pop();
+                },
+              ),
+            ],
+          );
+        },
       );
     }
   }
 
-  /* // Comment out until UserService.cancelFriendRequest is available
-  Future<void> _cancelSentRequest(String requestId) async {
-    try {
-      // Assuming a UserService method exists
-      await _userService.cancelFriendRequest(requestId); 
-      
-      if (!mounted) return;
-      
-      // Reload sent requests list
-      _loadSentRequests(); 
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Solicitud cancelada'),
-          backgroundColor: Colors.grey[600], // Neutral color
-        ),
-      );
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Error al cancelar: ${e.toString()}'),
-          backgroundColor: Colors.red,
-        )
-      );
-    }
-  }
-  */
 
   @override
   Widget build(BuildContext context) {
@@ -212,6 +181,12 @@ class FriendRequestsScreenState extends State<FriendRequestsScreen>
   Widget _buildReceivedRequestsList() {
     if (_isLoadingReceived) {
       return Center(child: CircularProgressIndicator());
+    }
+    if (_receivedError != null) {
+      return ErrorDisplay(
+        errorMessage: _receivedError!,
+        onRetry: _loadReceivedRequests,
+      );
     }
     if (_receivedRequests.isEmpty) {
       return _buildEmptyReceivedView();
@@ -265,7 +240,7 @@ class FriendRequestsScreenState extends State<FriendRequestsScreen>
             style: OutlinedButton.styleFrom(
               padding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
               minimumSize: Size(40, 36),
-              side: BorderSide(color: Colors.red.withOpacity(0.5)),
+              side: BorderSide(color: Colors.red.withAlpha((255 * 0.05).round())),
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
             ),
           ),
@@ -277,7 +252,7 @@ class FriendRequestsScreenState extends State<FriendRequestsScreen>
               foregroundColor: Colors.green[700],
               padding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
               minimumSize: Size(40, 36),
-              side: BorderSide(color: Colors.green.withOpacity(0.5)),
+              side: BorderSide(color: Colors.green.withAlpha((255 * 0.05).round())),
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
             ),
           ),
@@ -290,6 +265,12 @@ class FriendRequestsScreenState extends State<FriendRequestsScreen>
   Widget _buildSentRequestsList() {
     if (_isLoadingSent) {
       return Center(child: CircularProgressIndicator());
+    }
+    if (_sentError != null) {
+      return ErrorDisplay(
+        errorMessage: _sentError!,
+        onRetry: _loadSentRequests,
+      );
     }
     if (_sentRequests.isEmpty) {
       return _buildEmptySentView();

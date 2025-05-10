@@ -1,74 +1,129 @@
-// lib/services/auth_service.dart
 import 'dart:convert';
-import 'package:flutter/foundation.dart';
-import 'package:shared_preferences/shared_preferences.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import '../models/user_model.dart';
+import '../utils/result.dart';
 import 'local_storage_service.dart';
 import '../repositories/auth_repository.dart';
 import '../utils/logger.dart';
-import 'package:provider/provider.dart';
-import '../services/message_service.dart';
-import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
+
+// Define Secure Storage keys
+const String _secureTokenKey = 'auth_token';
+const String _secureRefreshTokenKey = 'refresh_token'; // Key for refresh token
+const String _secureUserDataKey = 'user_data';
 
 class AuthService with ChangeNotifier {
   UserModel? _user;
-  String? _token;
-  final LocalStorageService _storageService = LocalStorageService();
-  final AuthRepository _authRepo = AuthRepository();
+  String? _token; // Access Token
+  String? _refreshToken; // Refresh Token
+  final LocalStorageService _storageService = LocalStorageService(); // Still used for non-auth data clear on logout
+  final AuthRepository _authRepo;
   final Logger _logger = Logger();
 
+  // To securely store the token and the user's data
+  final FlutterSecureStorage _secureStorage = const FlutterSecureStorage();
+
   UserModel? get user => _user;
-  String? get token => _token;
+  String? get token => _token; // Access Token getter
+  String? get refreshToken => _refreshToken; // Refresh Token getter
   bool get isAuthenticated => _user != null && _token != null;
 
-  AuthService() {
+  // Constructor
+  AuthService(this._authRepo) {
+    _logger.d('AuthService initialized', tag: 'AuthService');
     _loadAuthData();
   }
 
   Future<void> _loadAuthData() async {
+    _logger.d('Attempting to load auth data from storage', tag: 'AuthService');
     try {
-      final authData = await _authRepo.loadAuthData();
-      
-      if (authData != null && authData.isNotEmpty) {
-        _token = authData['token'];
-        _user = authData['user'] as UserModel;
+      // Read both access and refresh tokens
+      final accessToken = await _secureStorage.read(key: _secureTokenKey);
+      final refreshToken = await _secureStorage.read(key: _secureRefreshTokenKey);
+      final userDataString = await _secureStorage.read(key: _secureUserDataKey);
+
+      if (accessToken != null && refreshToken != null && userDataString != null) {
+        _token = accessToken;
+        _refreshToken = refreshToken;
+        _user = UserModel.fromJson(json.decode(userDataString));
+        _logger.i('Auth data loaded successfully from storage for user: ${_user?.username}', tag: 'AuthService');
         notifyListeners();
+      } else {
+        _logger.i('No complete auth data found in storage', tag: 'AuthService');
+        // Clear potentially partial data if incomplete
+        await _clearAuthDataFromStorage(); 
       }
+
     } catch (e) {
       _logger.e('Error loading auth data', error: e, tag: 'AuthService');
+      // Clear data on error to avoid inconsistent state
+      await _clearAuthDataFromStorage();
     }
   }
 
-  Future<void> _saveUserToStorage() async {
-    final prefs = await SharedPreferences.getInstance();
+  Future<void> _saveTokensAndUserData(String accessToken, String refreshToken, UserModel user) async {
+    _logger.d('Saving tokens and user data to storage for user: ${user.username}', tag: 'AuthService');
+    try {
+      await _secureStorage.write(key: _secureTokenKey, value: accessToken);
+      await _secureStorage.write(key: _secureRefreshTokenKey, value: refreshToken);
+      await _secureStorage.write(
+        key: _secureUserDataKey,
+        value: json.encode(user.toJson()),
+      );
 
-    if (_user != null && _token != null) {
-      await prefs.setString('auth_token', _token!);
-      await prefs.setString('user_data', json.encode(_user!.toJson()));
+      _token = accessToken;
+      _refreshToken = refreshToken;
+      _user = user;
+      _logger.i('Tokens and user data saved successfully', tag: 'AuthService');
+      notifyListeners();
+
+    } catch (e) {
+      _logger.e('Failed to save tokens and user data', error: e, tag: 'AuthService');
+    }
+  }
+  
+  // Helper to clear only auth-related keys
+  Future<void> _clearAuthDataFromStorage() async {
+    _logger.d('Clearing auth data from secure storage', tag: 'AuthService');
+    try {
+      await _secureStorage.delete(key: _secureTokenKey);
+      await _secureStorage.delete(key: _secureRefreshTokenKey);
+      await _secureStorage.delete(key: _secureUserDataKey);
+    } catch (e) {
+      _logger.e('Error clearing auth data from secure storage', error: e, tag: 'AuthService');
     }
   }
 
   Future<UserModel> signIn(String email, String password) async {
-    try {
-      final authData = await _authRepo.signIn(email, password);
-      
-      if (authData == null) {
-        throw Exception('Error en el inicio de sesión: No se recibieron datos');
-      }
-      
-      _token = authData['access_token'];
-      _user = UserModel(
+    final loggedEmail = kDebugMode ? email : '[REDACTED]';
+    _logger.i('Attempting sign in for email: $loggedEmail', tag: 'AuthService');
+    final Result<Map<String, dynamic>> result = await _authRepo.signIn(email, password);
+
+    if (result.isSuccess) {
+      final Map<String, dynamic> authData = result.value;
+
+      final accessToken = authData['access_token'];
+      final refreshToken = authData['refresh_token']; 
+      final userModel = UserModel(
         username: authData['username'],
         displayName: authData['display_name'],
-        lastSeen: DateTime.now(),
       );
-      
-      await _saveUserToStorage();
-      notifyListeners();
-      return _user!;
-    } catch (e) {
-      _logger.e('Error signing in', error: e, tag: 'AuthService');
-      rethrow;
+
+      if (accessToken == null || refreshToken == null) {
+        _logger.e('Sign in response missing required tokens', tag: 'AuthService');
+        throw Exception('Authentication failed: Server response incomplete.');
+      }
+
+      _logger.i('Sign in successful for user: ${userModel.username}', tag: 'AuthService');
+      // Save both tokens and user data
+      await _saveTokensAndUserData(accessToken, refreshToken, userModel);
+      // No need to call notifyListeners here, _saveTokensAndUserData does it
+
+      return userModel;
+
+    } else {
+      _logger.w('Sign in failed', error: result.error, tag: 'AuthService');
+      throw result.error;
     }
   }
 
@@ -78,53 +133,99 @@ class AuthService with ChangeNotifier {
     String password,
     String displayName,
   ) async {
-    try {
-      final authData = await _authRepo.signUp(
-        username,
-        email,
-        password,
-        displayName,
-      );
-      
-      if (authData == null) {
-        throw Exception('Error en el registro: No se recibieron datos');
-      }
-      
-      _token = authData['access_token'];
-      _user = UserModel(
+    final loggedEmail = kDebugMode ? email : '[REDACTED]';
+    _logger.i('Attempting sign up for username: $username, email: $loggedEmail', tag: 'AuthService');
+
+    final Result<Map<String, dynamic>> result = await _authRepo.signUp(username, email, password, displayName);
+
+    if (result.isSuccess) {
+      final Map<String, dynamic> authData = result.value;
+
+      final accessToken = authData['access_token'];
+      final refreshToken = authData['refresh_token'];
+
+      final userModel = UserModel(
         username: authData['username'],
         displayName: authData['display_name'],
-        lastSeen: DateTime.now(),
       );
-      
-      await _saveUserToStorage();
-      notifyListeners();
-      return _user!;
-    } catch (e) {
-      _logger.e('Error signing up', error: e, tag: 'AuthService');
-      rethrow;
+
+      if (accessToken == null || refreshToken == null) {
+        _logger.e('Sign up response missing required tokens', tag: 'AuthService');
+        throw Exception('Registration failed: Server response incomplete.');
+      }
+
+      _logger.i('Sign up successful for user: ${userModel.username}', tag: 'AuthService');
+      // Save both tokens and user data
+      await _saveTokensAndUserData(accessToken, refreshToken, userModel);
+      // No need to call notifyListeners here, _saveTokensAndUserData does it
+
+      return userModel;
+
+    } else {
+      _logger.w('Sign up failed', error: result.error, tag: 'AuthService');
+      throw result.error;
     }
   }
 
-  Future<bool> signOut(BuildContext context) async {
+  Future<bool> signOut() async {
+    final username = _user?.username ?? 'unknown';
+    _logger.i('Attempting sign out for user: $username', tag: 'AuthService');
     try {
-      await _authRepo.clearAuthData();
-      
+      // Clear secure storage
+      await _clearAuthDataFromStorage();
+
+      // Clear internal state
       _token = null;
+      _refreshToken = null;
       _user = null;
-      
+
+      // Clear non-secure storage (conversations) - Keep this if LocalStorageService is independent
       await _storageService.clearAllConversations();
-      
-      // Disconnect WebSocket and clear message data
-      final messageService = Provider.of<MessageService>(context, listen: false);
-      messageService.disconnectWebSocket();
-      messageService.clearData();
-      
-      notifyListeners();
+
+      // Remove MessageService handling from here
+      // The UI layer listening to AuthService changes should handle this
+      /*
+      try {
+        final messageService = Provider.of<MessageService>(context, listen: false);
+        messageService.disconnect();
+        await messageService.clearAllLocalConversations();
+      } catch (e) {
+        _logger.e('Error accessing MessageService during sign out', error: e, tag: 'AuthService');
+      }
+      */
+
+      _logger.i('Sign out successful for user: $username (state cleared)', tag: 'AuthService');
+      notifyListeners(); // Notify UI about logout state
+
       return true;
+
     } catch (e) {
-      _logger.e('Error signing out', error: e, tag: 'AuthService');
+      _logger.e('Error signing out user: $username', error: e, tag: 'AuthService');
+      // Ensure state is cleared even if error occurs (e.g., during storage clear)
+      _token = null;
+      _refreshToken = null;
+      _user = null;
+      notifyListeners();
       return false;
+    }
+  }
+
+  Future<void> handleSuccessfulRefresh(Map<String, dynamic> tokenData) async {
+    final accessToken = tokenData['access_token'] as String?;
+    final refreshToken = tokenData['refresh_token'] as String?;
+    final user = this.user;
+
+    if (accessToken != null && refreshToken != null && user != null) {
+      _logger.i('Handling successful token refresh for user: ${user.username}', tag: 'AuthService');
+      await _saveTokensAndUserData(accessToken, refreshToken, user);
+    } else {
+      // Include tokenData details in the message string
+      _logger.e(
+        'handleSuccessfulRefresh received invalid data or user was null. Data: ${jsonEncode(tokenData)}',
+        tag: 'AuthService'
+      ); 
+      // If data is invalid, potentially log out
+      // await signOut(); // Consider if this is appropriate
     }
   }
 }
